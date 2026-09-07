@@ -7,7 +7,6 @@ from unittest.mock import patch
 
 import numpy as np
 
-from scripts.aws_bootstrap import policy_documents
 from src.config import Config
 from src.database import EventStore
 from src.inference import StubInference, quantize
@@ -76,15 +75,6 @@ class PipelineTests(unittest.TestCase):
         detail = {"dtype": np.int8, "quantization_parameters": {"scales": [0.5, 0.2], "zero_points": [0, 0]}}
         with self.assertRaises(ValueError):
             quantize(np.array([0], dtype=np.float32), detail)
-
-    def test_cloud_permissions_are_scoped_to_device_table_and_rule(self):
-        device, trust, writer = policy_documents("aws", "us-east-1", "123456789012", "pi", "iot/room/events", "Events", "rule")
-        self.assertEqual(device["Statement"][0]["Resource"], "arn:aws:iot:us-east-1:123456789012:client/pi")
-        self.assertEqual(device["Statement"][1]["Action"], "iot:Publish")
-        self.assertNotIn("*", json.dumps(device))
-        self.assertEqual(writer["Statement"][0]["Resource"], "arn:aws:dynamodb:us-east-1:123456789012:table/Events")
-        self.assertEqual(trust["Statement"][0]["Condition"]["ArnEquals"]["aws:SourceArn"], "arn:aws:iot:us-east-1:123456789012:rule/rule")
-
 
 class EventStoreContext(EventStore):
     def __enter__(self):

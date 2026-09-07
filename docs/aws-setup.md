@@ -1,13 +1,16 @@
-# AWS IoT Core and MQTT setup
+# Basic AWS IoT + MQTT setup
 
-The repository does not create AWS resources merely by being installed. The
-bootstrap previews by default; `--apply` creates resources and may incur usage
-charges. No credentials belong in source control.
+Goal: send one message from the laptop through AWS IoT Core and receive it back.
+Camera/PIR behavior, ML, TinyDB, and cloud storage come later.
 
-## 1. Configure your account once
+## 1. Sign in to the AWS account
 
-Install AWS CLI v2 from https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html.
-Use your lab/account's provided access method. For IAM Identity Center:
+Use your own or your lab's AWS account and choose one region. These examples use
+`us-east-1`; use your chosen region consistently.
+
+If your organization uses IAM Identity Center, install
+[AWS CLI v2](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html)
+and sign in:
 
 ```powershell
 aws configure sso --profile iot-dev
@@ -15,28 +18,20 @@ aws sso login --profile iot-dev
 aws sts get-caller-identity --profile iot-dev
 ```
 
-For an IAM access-key profile instead, use `aws configure --profile iot-dev`.
-Do not use root-account keys. The profile stays in your local AWS configuration,
-outside the repository. Pick one region for IoT Core, the rule, and DynamoDB.
-The examples use `us-east-1`; change every command consistently if necessary.
+If your account instead provides an IAM access-key profile, configure it locally
+with `aws configure --profile iot-dev`. Do not paste credentials into chat or
+commit them. For already-configured default credentials, omit `--profile iot-dev`
+from the bootstrap commands. A browser console login alone does not authenticate
+the Python bootstrap.
 
-The setup identity needs these AWS API permissions (your lab admin may need to
-grant them). AWS IoT policy permissions are separate from IAM setup permissions.
+The setup identity needs `sts:GetCallerIdentity` and these IoT operations:
+`iot:CreateThing`, `iot:GetPolicy`, `iot:CreatePolicy`,
+`iot:CreateKeysAndCertificate`, `iot:DescribeCertificate`,
+`iot:AttachPolicy`, `iot:AttachThingPrincipal`, `iot:UpdateCertificate`,
+and `iot:DescribeEndpoint`. Your lab administrator may need to grant them.
+This setup needs no DynamoDB or IAM-role creation permissions.
 
-| Service | Setup operations |
-|---|---|
-| STS | `sts:GetCallerIdentity` |
-| IoT | `iot:CreateThing`, `iot:GetPolicy`, `iot:CreatePolicy`, `iot:CreateKeysAndCertificate`, `iot:DescribeCertificate`, `iot:AttachPolicy`, `iot:AttachThingPrincipal`, `iot:UpdateCertificate`, `iot:DescribeEndpoint`, `iot:GetTopicRule`, `iot:CreateTopicRule` |
-| DynamoDB | `dynamodb:DescribeTable`, `dynamodb:CreateTable` |
-| IAM | `iam:GetRole`, `iam:CreateRole`, `iam:GetRolePolicy`, `iam:PutRolePolicy`, `iam:PassRole` |
-
-Scope `iam:PassRole` to `CameraPirIoTRuleRole` with
-`iam:PassedToService = iot.amazonaws.com`. Scope other operations to the named
-resources wherever the operation supports it; creation/discovery operations may
-require `Resource: "*"`. The console MQTT test client and table viewer require
-additional read/test permissions; these are not used by the bootstrap itself.
-
-## 2. Preview and create
+## 2. Create the basic resources
 
 From `C:\iot++`:
 
@@ -46,92 +41,109 @@ From `C:\iot++`:
 .\.venv\Scripts\python.exe scripts/aws_bootstrap.py --profile iot-dev --region us-east-1 --apply
 ```
 
-This creates or reuses matching resources:
+The first run is a preview. The second creates resources in your account; normal
+AWS IoT usage charges may apply.
 
-| Resource | Default / behavior |
+| Item | Default |
 |---|---|
-| IoT Thing and MQTT client ID | `room-monitor-pi` |
-| Device policy | `CameraPirDevicePolicy`: connect as that client, publish only to `iot/room/events` |
-| X.509 certificate | Created inactive, saved locally, attached, then activated |
-| ATS endpoint | Discovered for the selected account/region |
-| DynamoDB table | `IoTEdgeEvents`, on-demand capacity; string partition key `device_id`, string sort key `event_id` |
-| IAM rule role | `CameraPirIoTRuleRole`, `dynamodb:PutItem` on this table only; trust restricted to account and rule ARN |
-| IoT rule | `camera_pir_to_dynamodb`, SQL `SELECT * FROM 'iot/room/events'`, DynamoDBv2 action |
+| IoT Thing / MQTT client ID | `room-monitor-pi` |
+| Device policy | `CameraPirMqttPolicy` |
+| MQTT topic | `iot/setup/test` |
+| Transport | TLS with client certificate, port 8883 |
+| Endpoint | Your account's IoT Data-ATS hostname |
 
-The script saves `certs/device.cert.pem`, `certs/device.private.key`,
-`certs/AmazonRootCA1.pem`, `certs/aws-bootstrap-state.json`, and `.env.aws`.
-All are ignored by Git. Keep the private key and state secure and retain them
-for reruns. Unix key files use mode 0600; on Windows they inherit directory ACLs,
-so keep the directory accessible only to your account as appropriate.
+The script creates an inactive X.509 certificate, saves its private key locally,
+attaches the certificate to the Thing and policy, then activates it. It saves:
 
-Rerunning with identical configuration reuses the saved certificate. Existing
-policy/rule/schema/trust mismatches cause an error for review. The script does
-not roll back partial AWS setup or delete resources. Allow a short delay for IAM
-and IoT policy propagation, then rerun the same command after transient failures.
-Keep resource names unique to this project; do not point the script at shared
-production resources.
+- `certs/device.cert.pem`
+- `certs/device.private.key`
+- `certs/AmazonRootCA1.pem`
+- `certs/aws-bootstrap-state.json`
+- `.env.aws`
 
-If creation stops after a certificate ID is saved but before both credential
-files are saved, the private key cannot be downloaded again. In AWS IoT,
-inspect the certificate ID in state, detach any policies and Thing association,
-deactivate and delete that incomplete certificate. Then remove only that
-certificate's local files and the `certificate_arn`/`certificate_id` fields from
-state, and rerun. Do not discard working credentials or unrelated resources.
+All these files are ignored by Git. Rerun with the same arguments to reuse the
+saved identity. A mismatch with existing state or policy stops for review.
+Partial setup is retained for retry; there is no automatic deletion.
 
-## 3. Verify MQTT and DynamoDB
+## 3. Prove MQTT works
 
-1. In the same region, open **AWS IoT Core > MQTT test client** and subscribe to
-   `iot/room/events` before running the app. No separate broker is needed.
-2. Run:
+```powershell
+.\.venv\Scripts\python.exe scripts/mqtt_test.py
+```
+
+The test loads `.env.aws`, verifies TLS, connects, waits for AWS to acknowledge
+the subscription, publishes a unique non-retained message with QoS 1, and waits
+for both the publish acknowledgment and the exact same message to arrive back.
+
+Success ends with:
+
+```text
+PASS: AWS acknowledged and returned the test message on iot/setup/test.
+```
+
+Connection, subscription, publish, or receive failures return a nonzero exit code.
+No images, sensor events, database rows, or ML predictions are generated.
+
+Optionally open **AWS IoT Core > MQTT test client** in the same region and
+subscribe to `iot/setup/test` before running the command to see the JSON there,
+too. The browser console test client requires its own IAM test permissions.
+
+## If you prefer AWS Console setup
+
+1. Create the Thing `room-monitor-pi` in AWS IoT Core and create/download its
+   device certificate and private key. Activate the certificate.
+2. Create `CameraPirMqttPolicy` with these statements, replacing REGION and
+   ACCOUNT_ID with your actual values. This example is for standard AWS regions:
+
+   | Action | Resource ARN |
+   |---|---|
+   | `iot:Connect` | `arn:aws:iot:REGION:ACCOUNT_ID:client/room-monitor-pi` |
+   | `iot:Publish`, `iot:Receive` | `arn:aws:iot:REGION:ACCOUNT_ID:topic/iot/setup/test` |
+   | `iot:Subscribe` | `arn:aws:iot:REGION:ACCOUNT_ID:topicfilter/iot/setup/test` |
+
+   Each statement uses `Effect: Allow`. Attach this policy to the certificate
+   and attach the certificate to the Thing.
+3. Save the certificate and key at the local paths listed above. Get
+   [Amazon Root CA 1](https://www.amazontrust.com/repository/AmazonRootCA1.pem)
+   and save it at `certs/AmazonRootCA1.pem`.
+4. In AWS IoT Core settings, copy the device data endpoint (Data-ATS hostname).
+   Copy `.env.mqtt.example` to `.env.aws` and fill in `MQTT_ENDPOINT`:
 
    ```powershell
-   .\.venv\Scripts\python.exe -m src.main --env .env.aws --count 3
+   Copy-Item .env.mqtt.example .env.aws
    ```
 
-   This uses simulated PIR/camera and stub inference unless environment variables
-   override those defaults. `--env .env.aws` loads that file instead of `.env`.
-   For ongoing webcam use, merge the generated MQTT settings into `.env` and set
-   `CAMERA_BACKEND=webcam`, then run without `--env`.
-3. Confirm received JSON contains `device_id`, `event_id`, `timestamp`, `motion`,
-   `prediction`, `confidence`, and simulation/backend markers.
-4. Open **DynamoDB > Tables > IoTEdgeEvents > Explore table items**. Locate the
-   same `event_id`. Only metadata is sent; `image_path` refers to a local file.
-5. Stop with Ctrl+C. Disconnect Wi-Fi during a longer run to check that events
-   remain locally pending and replay after connectivity returns.
+5. Run `scripts/mqtt_test.py`. Once credentials exist, the MQTT test doesn't
+   need an AWS CLI login or a setup profile. Do not run the bootstrap over
+   manually downloaded certificates; keep using this manual setup.
 
-TLS uses the ATS hostname, port **8883**, Amazon root CA, and a device certificate
-and private key. Hostname and certificate verification remain enabled. Your
-network must permit outbound TCP 8883 and DNS; bootstrap also needs HTTPS 443.
-The device ID must equal the policy's permitted client ID. Two concurrent clients
-with that same ID can disconnect each other.
+## Troubleshooting
 
-MQTT QoS 1 acknowledges delivery to the broker, **not successful DynamoDB writes**.
-The app marks records published after broker acknowledgment. Rule/IAM failures
-must be diagnosed in AWS; enable IoT logging/monitoring if needed. A replay uses
-the original event ID, so duplicate deliveries overwrite the same table item.
-For guaranteed cloud processing acknowledgment, add an application ACK topic
-and error handling before relying on this starter for production.
-
-## Troubleshooting and cleanup
-
-- No MQTT messages: check region/ATS hostname, active certificate and attachments,
-  matching client ID/topic, local clock, certificate paths, firewall, and Wi-Fi.
-- MQTT works but table stays empty: check the rule is enabled, SQL topic and key
-  fields match, and the role trust and `PutItem` permission are correct.
-- AccessDenied in bootstrap: the IAM setup profile lacks an operation above;
-  a device certificate cannot create cloud resources.
-- Backlog/image growth: TinyDB and images have no retention policy in this
-  starter. Archive/remove old local data while the app is stopped, after deciding
-  what must be retained. Run only one writer per local TinyDB file.
-- When finished with the lab: stop publishers, disable/delete the IoT rule,
-  detach the device policy and Thing principal, deactivate/delete the certificate,
-  delete the dedicated Thing/policy, and delete the dedicated IAM inline policy
-  and role. Delete the DynamoDB table only after exporting anything needed.
-  Consult saved state for exact names/IDs. Deletion is intentionally manual.
+- Missing `.env.aws` or TLS file: finish automatic or manual setup first.
+- Connection fails: check the ATS hostname/region, active certificate, policy
+  attachments, matching client ID, local clock, DNS, and outbound TCP 8883.
+  Bootstrap also needs outbound HTTPS 443.
+- Subscription denied: `iot:Subscribe` uses a **topicfilter** ARN.
+  Publish and receive permissions use a **topic** ARN.
+- Publish succeeds but receive times out: check `iot:Receive` and the exact topic.
+- Wait briefly after policy changes for propagation, then rerun.
+- Use one running client per client ID. Stop the laptop test before using that
+  identity on a future Pi.
+- `--env PATH` selects another settings file; `--timeout 30` increases the
+  timeout per stage. Existing process environment settings override the file.
+- Existing state from the earlier DynamoDB bootstrap stops with a configuration
+  mismatch. Keep its credentials/state for review; this version neither changes
+  nor deletes any previously provisioned DynamoDB/rule/IAM resources.
+- If certificate creation was interrupted before both local credential files
+  were saved, its private key cannot be downloaded again. Inspect the certificate
+  ID in state, detach/deactivate/delete that incomplete certificate in AWS, remove
+  only its incomplete files and its `certificate_arn`/`certificate_id` state
+  fields, then rerun. Preserve working credentials and unrelated resources.
+- Keep local key files private. Unix files use mode 0600; Windows files inherit
+  the directory's permissions.
 
 ## Official references
 
-- AWS DynamoDBv2 rule action: https://docs.aws.amazon.com/iot/latest/developerguide/dynamodb-v2-rule-action.html
-- AWS rule API: https://docs.aws.amazon.com/boto3/latest/reference/services/iot/client/create_topic_rule.html
-- AWS device authentication: https://docs.aws.amazon.com/iot/latest/developerguide/x509-client-certs.html
-- Paho MQTT client/TLS API: https://eclipse.dev/paho/files/paho.mqtt.python/html/client.html
+- [AWS IoT publish/subscribe policies](https://docs.aws.amazon.com/iot/latest/developerguide/pub-sub-policy.html)
+- [AWS X.509 device certificates](https://docs.aws.amazon.com/iot/latest/developerguide/x509-client-certs.html)
+- [Paho MQTT Python client](https://eclipse.dev/paho/files/paho.mqtt.python/html/client.html)

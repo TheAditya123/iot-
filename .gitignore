@@ -5,6 +5,7 @@ __pycache__/
 .env
 .env.*
 !.env.example
+!.env.mqtt.example
 certs/*
 !certs/.gitkeep
 data/*

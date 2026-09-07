@@ -1,1 +1,2 @@
+-r requirements-mqtt.txt
 boto3==1.43.89
