@@ -1,0 +1,6 @@
+# Picamera2, gpiozero, lgpio and numpy come from Raspberry Pi OS apt packages.
+# Create this venv with --system-site-packages; see README.
+tinydb==4.9.0
+python-dotenv==1.2.3
+paho-mqtt==2.1.0
+Pillow==12.1.1

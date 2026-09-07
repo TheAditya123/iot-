@@ -1,0 +1,2 @@
+# Optional: platform/Python wheel availability varies. See models/README.md.
+ai-edge-litert==2.2.0
