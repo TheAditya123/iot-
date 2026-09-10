@@ -21,7 +21,7 @@ class FakeClient:
     def tls_set_context(self, context):
         pass
 
-    def connect_async(self, *args, **kwargs):
+    def connect(self, *args, **kwargs):
         pass
 
     def loop_start(self):

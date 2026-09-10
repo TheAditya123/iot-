@@ -117,6 +117,10 @@ too. The browser console test client requires its own IAM test permissions.
    need an AWS CLI login or a setup profile. Do not run the bootstrap over
    manually downloaded certificates; keep using this manual setup.
 
+If the AWS **Connect one device** wizard generated a sample command with a
+different `--client_id` (for example, `basicPubSub`), set that exact value as
+`MQTT_CLIENT_ID` in `.env.aws`. Keep `DEVICE_ID` as the Thing/device name.
+
 ## Troubleshooting
 
 - Missing `.env.aws` or TLS file: finish automatic or manual setup first.

@@ -27,6 +27,7 @@ class Settings:
     private_key: Path
     timeout: float = 20
     port: int = 8883
+    client_id: str | None = None
 
     @classmethod
     def load(cls, env_file, timeout):
@@ -48,7 +49,10 @@ class Settings:
 
         device_id = setting("DEVICE_ID", "room-monitor-pi")
         if not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", device_id):
-            raise ValueError("DEVICE_ID must match the IoT Thing and policy client ID")
+            raise ValueError("DEVICE_ID must be a valid IoT device name")
+        client_id = setting("MQTT_CLIENT_ID", device_id)
+        if not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", client_id):
+            raise ValueError("MQTT_CLIENT_ID must match the client ID allowed by the IoT policy")
         endpoint = setting("MQTT_ENDPOINT")
         if not re.fullmatch(r"[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+", endpoint):
             raise ValueError("Set MQTT_ENDPOINT to your AWS IoT Data-ATS hostname (no https:// or port)")
@@ -60,7 +64,8 @@ class Settings:
         return cls(device_id, endpoint, topic,
                    local_path("MQTT_CA_CERT", "certs/AmazonRootCA1.pem"),
                    local_path("MQTT_CLIENT_CERT", "certs/device.cert.pem"),
-                   local_path("MQTT_PRIVATE_KEY", "certs/device.private.key"), timeout)
+                   local_path("MQTT_PRIVATE_KEY", "certs/device.private.key"),
+                   timeout=timeout, client_id=client_id)
 
 
 def run_test(settings):
@@ -69,7 +74,7 @@ def run_test(settings):
     payload = json.dumps({"kind": "mqtt_connection_test", "test_id": uuid.uuid4().hex,
                           "device_id": settings.device_id, "message": "hello from laptop",
                           "timestamp": datetime.now(timezone.utc).isoformat()}).encode("utf-8")
-    client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id=settings.device_id,
+    client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id=settings.client_id or settings.device_id,
                          clean_session=True, protocol=mqtt.MQTTv311, reconnect_on_failure=False)
     context = ssl.create_default_context(cafile=str(settings.ca_cert))
     context.minimum_version = ssl.TLSVersion.TLSv1_2
@@ -105,7 +110,10 @@ def run_test(settings):
             raise RuntimeError(errors[0])
 
     try:
-        client.connect_async(settings.endpoint, settings.port, keepalive=60)
+        # Open the socket before starting the network loop. This is reliable on
+        # Windows as well as Raspberry Pi OS; connect_async() can leave the first
+        # connection attempt unscheduled when automatic reconnect is disabled.
+        client.connect(settings.endpoint, settings.port, keepalive=60)
         client.loop_start()
         wait(connected, "AWS MQTT connection")
         print("Connected securely to AWS IoT.")
@@ -121,6 +129,7 @@ def run_test(settings):
             raise TimeoutError("AWS did not acknowledge the published test message")
         wait(received, "the same test message from AWS; check iot:Receive on the topic ARN")
         print(f"PASS: AWS acknowledged and returned the test message on {settings.topic}.")
+        print("Verified payload: " + payload.decode("utf-8"))
         return json.loads(payload)
     finally:
         client.disconnect()
