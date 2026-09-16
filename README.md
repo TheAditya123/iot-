@@ -45,6 +45,43 @@ result. Installing the repo or passing offline tests does not establish an AWS
 connection. If you create the resources in AWS Console instead, the guide covers
 the same setup using `.env.mqtt.example`.
 
+## Install the project on a Raspberry Pi
+
+After connecting to the Pi with SSH, install the OS packages and clone the whole
+repository:
+
+```bash
+sudo apt update
+sudo apt install -y git python3-venv python3-picamera2 python3-gpiozero python3-lgpio python3-numpy
+git clone https://github.com/TheAditya123/iot-.git ~/iot-project
+cd ~/iot-project
+python3 -m venv --system-site-packages .venv
+.venv/bin/python -m pip install --upgrade pip
+.venv/bin/python -m pip install -r requirements-pi.txt
+cp .env.example .env
+```
+
+Run the hardware-independent starter pipeline first:
+
+```bash
+.venv/bin/python -m src.main
+```
+
+It uses simulated PIR and camera inputs until `.env` is changed for the real
+hardware. Device certificates and `.env.aws` are intentionally excluded from
+Git; copy them to the Pi separately before running the live MQTT test:
+
+```bash
+.venv/bin/python scripts/mqtt_test.py
+```
+
+To download later repository updates:
+
+```bash
+cd ~/iot-project
+git pull
+```
+
 ## What's included now
 
 - `scripts/aws_bootstrap.py`: basic AWS IoT Core setup, with a preview mode.
