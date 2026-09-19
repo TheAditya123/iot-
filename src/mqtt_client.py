@@ -12,7 +12,7 @@ class MQTTPublisher:
         self.config = config
         self.connected = threading.Event()
         self.client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2,
-                                  client_id=config.device_id, protocol=mqtt.MQTTv311)
+                                  client_id=config.client_id, protocol=mqtt.MQTTv311)
         self.client.on_connect = self._on_connect
         self.client.on_disconnect = self._on_disconnect
         context = ssl.create_default_context(cafile=str(config.ca_cert))
@@ -62,3 +62,4 @@ def flush_outbox(store, publisher, device_id):
         if not publisher.publish(event):
             break
         store.mark_published(doc_id)
+        LOG.info("Published event %s to AWS topic %s", event.get("event_id"), publisher.config.topic)

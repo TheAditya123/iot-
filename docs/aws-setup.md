@@ -1,7 +1,8 @@
 # Basic AWS IoT + MQTT setup
 
-Goal: send one message from the laptop through AWS IoT Core and receive it back.
-Camera/PIR behavior, ML, TinyDB, and cloud storage come later.
+Goal: give the Raspberry Pi its own AWS IoT certificate and confirm MQTT works
+before running the real PIR → TinyDB → AWS application. The test script sends a
+single connection-check message; `src.main` publishes real PIR events.
 
 ## 1. Sign in to the AWS account
 
@@ -33,7 +34,15 @@ This setup needs no DynamoDB or IAM-role creation permissions.
 
 ## 2. Create the basic resources
 
-From `C:\iot++`:
+From `~/iot-project` **on the Pi** (after configuring an AWS CLI profile there):
+
+```bash
+.venv/bin/python -m pip install -r requirements-aws.txt
+.venv/bin/python scripts/aws_bootstrap.py --profile iot-dev --region us-east-1
+.venv/bin/python scripts/aws_bootstrap.py --profile iot-dev --region us-east-1 --apply
+```
+
+The equivalent commands from `C:\iot++` on Windows are:
 
 ```powershell
 .\.venv\Scripts\python.exe -m pip install -r requirements-aws.txt
@@ -67,8 +76,8 @@ Partial setup is retained for retry; there is no automatic deletion.
 
 ## 3. Prove MQTT works
 
-```powershell
-.\.venv\Scripts\python.exe scripts/mqtt_test.py
+```bash
+.venv/bin/python scripts/mqtt_test.py
 ```
 
 The test loads `.env.aws`, verifies TLS, connects, waits for AWS to acknowledge
@@ -90,7 +99,7 @@ too. The browser console test client requires its own IAM test permissions.
 
 ## If you prefer AWS Console setup
 
-1. Create the Thing `room-monitor-pi` in AWS IoT Core and create/download its
+1. Create a **new Pi Thing** named `room-monitor-pi` in AWS IoT Core and create/download its
    device certificate and private key. Activate the certificate.
 2. Create `CameraPirMqttPolicy` with these statements, replacing REGION and
    ACCOUNT_ID with your actual values. This example is for standard AWS regions:
@@ -107,11 +116,16 @@ too. The browser console test client requires its own IAM test permissions.
    [Amazon Root CA 1](https://www.amazontrust.com/repository/AmazonRootCA1.pem)
    and save it at `certs/AmazonRootCA1.pem`.
 4. In AWS IoT Core settings, copy the device data endpoint (Data-ATS hostname).
-   Copy `.env.mqtt.example` to `.env.aws` and fill in `MQTT_ENDPOINT`:
+   Copy `.env.mqtt.example` to `.env.aws` on the Pi and fill in `MQTT_ENDPOINT`:
 
-   ```powershell
-   Copy-Item .env.mqtt.example .env.aws
+   ```bash
+   cp .env.mqtt.example .env.aws
    ```
+
+   Put the Pi certificate, private key, and Amazon Root CA 1 at the paths named
+   in `.env.aws`. If you downloaded them to Windows, transfer them to the Pi
+   with `scp` over SSH. Keep the private key out of Git and set its permissions
+   on the Pi with `chmod 600 certs/device.private.key`.
 
 5. Run `scripts/mqtt_test.py`. Once credentials exist, the MQTT test doesn't
    need an AWS CLI login or a setup profile. Do not run the bootstrap over
@@ -131,8 +145,8 @@ different `--client_id` (for example, `basicPubSub`), set that exact value as
   Publish and receive permissions use a **topic** ARN.
 - Publish succeeds but receive times out: check `iot:Receive` and the exact topic.
 - Wait briefly after policy changes for propagation, then rerun.
-- Use one running client per client ID. Stop the laptop test before using that
-  identity on a future Pi.
+- Use one running client per client ID. The Pi should have its own Thing and
+  certificate, separate from the laptop test identity.
 - `--env PATH` selects another settings file; `--timeout 30` increases the
   timeout per stage. Existing process environment settings override the file.
 - Existing state from the earlier DynamoDB bootstrap stops with a configuration

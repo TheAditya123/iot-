@@ -72,7 +72,7 @@ def run_test(settings):
     connected, subscribed, received = threading.Event(), threading.Event(), threading.Event()
     errors = []
     payload = json.dumps({"kind": "mqtt_connection_test", "test_id": uuid.uuid4().hex,
-                          "device_id": settings.device_id, "message": "hello from laptop",
+                          "device_id": settings.device_id, "message": "hello from device",
                           "timestamp": datetime.now(timezone.utc).isoformat()}).encode("utf-8")
     client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id=settings.client_id or settings.device_id,
                          clean_session=True, protocol=mqtt.MQTTv311, reconnect_on_failure=False)

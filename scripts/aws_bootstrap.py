@@ -90,7 +90,7 @@ def apply(args):
     endpoint = iot.describe_endpoint(endpointType="iot:Data-ATS")["endpointAddress"]
     state.update(endpoint=endpoint, complete=True)
     write_json(state_path, state)
-    env = (f"DEVICE_ID={args.thing}\nMQTT_ENABLED=true\nMQTT_ENDPOINT={endpoint}\n"
+    env = (f"DEVICE_ID={args.thing}\nMQTT_ENDPOINT={endpoint}\n"
            f"MQTT_PORT=8883\nMQTT_TOPIC={args.topic}\n"
            "MQTT_CA_CERT=certs/AmazonRootCA1.pem\nMQTT_CLIENT_CERT=certs/device.cert.pem\n"
            "MQTT_PRIVATE_KEY=certs/device.private.key\n")

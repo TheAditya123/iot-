@@ -1,12 +1,7 @@
-"""Stub plus a single-input/single-output RGB image classifier adapter."""
+"""Optional real TFLite classifier; no predictions without a supplied model."""
 import importlib
 import numpy as np
 from PIL import Image
-
-
-class StubInference:
-    def predict(self, image):
-        return {"prediction": "unclassified", "confidence": None, "inference_backend": "stub"}
 
 
 def quantize(values, detail):
@@ -79,4 +74,4 @@ class TFLiteInference:
 
 
 def make_inference(config):
-    return TFLiteInference(config) if config.inference_backend == "tflite" else StubInference()
+    return TFLiteInference(config) if config.inference_backend == "tflite" else None

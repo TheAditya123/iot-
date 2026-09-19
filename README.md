@@ -1,116 +1,121 @@
-# Camera + PIR project — AWS/MQTT setup first
+# Raspberry Pi PIR → TinyDB → AWS IoT
 
-Current milestone: get a basic MQTT connection working with AWS before the hardware arrives.
+This project runs on a Raspberry Pi 5 with a **physical HC-SR501 PIR sensor**.
+Each motion trigger creates one event in local TinyDB (`data/events.json`). The
+Pi publishes the same event as JSON to AWS IoT Core over MQTT/TLS. If AWS is
+offline, the record remains in TinyDB and the app retries it. Camera capture
+and TFLite inference are optional and **off by default**; no sensor readings,
+photos, or predictions are simulated.
 
-```text
-Laptop -> MQTT over TLS -> AWS IoT Core -> same test message back to laptop
-```
+## 1. Wire the PIR (Pi powered off)
 
-The setup creates an IoT Thing, device certificate, a policy for one test topic,
-and a local connection settings file. The test subscribes, publishes one unique
-"hello from laptop" message, and exits successfully only after AWS acknowledges
-it and delivers that same message back.
+| HC-SR501 | Raspberry Pi 5 header |
+|---|---|
+| VCC | 5V, physical pin 2 |
+| GND | Ground, physical pin 6 |
+| OUT | GPIO17, physical pin 11 |
 
-## Get started
+`PIR_GPIO=17` uses **BCM GPIO numbering**, not physical pin numbering. Check
+the markings on your particular sensor before connecting it. The Pi GPIO
+input must never receive 5V. The PIR may need about a minute to settle after
+power-on; the app waits 60 seconds by default.
 
-From PowerShell in `C:\iot++` (Python 3.11+):
+## 2. Install on the Pi
 
-```powershell
-python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r requirements-aws.txt
-```
-
-Configure your AWS login using [the setup guide](docs/aws-setup.md), then:
-
-```powershell
-# Preview: no AWS changes.
-.\.venv\Scripts\python.exe scripts/aws_bootstrap.py --profile iot-dev --region us-east-1
-
-# Create the basic AWS IoT resources and save local certificates/settings.
-.\.venv\Scripts\python.exe scripts/aws_bootstrap.py --profile iot-dev --region us-east-1 --apply
-
-# Connect, subscribe, publish, and receive one test message.
-.\.venv\Scripts\python.exe scripts/mqtt_test.py
-```
-
-Expected result:
-
-```text
-Connected securely to AWS IoT.
-PASS: AWS acknowledged and returned the test message on iot/setup/test.
-```
-
-An AWS account/login and valid device certificates are required for that live
-result. Installing the repo or passing offline tests does not establish an AWS
-connection. If you create the resources in AWS Console instead, the guide covers
-the same setup using `.env.mqtt.example`.
-
-## Install the project on a Raspberry Pi
-
-After connecting to the Pi with SSH, install the OS packages and clone the whole
-repository:
+Open Terminal on the Pi, or use VS Code Remote SSH (its terminal runs on the Pi):
 
 ```bash
 sudo apt update
-sudo apt install -y git python3-venv python3-picamera2 python3-gpiozero python3-lgpio python3-numpy
+sudo apt install -y git python3-venv python3-gpiozero python3-lgpio python3-picamera2 python3-numpy python3-pil
 git clone https://github.com/TheAditya123/iot-.git ~/iot-project
 cd ~/iot-project
 python3 -m venv --system-site-packages .venv
-.venv/bin/python -m pip install --upgrade pip
 .venv/bin/python -m pip install -r requirements-pi.txt
 cp .env.example .env
 ```
 
-Run the hardware-independent starter pipeline first:
+If you cloned the repo earlier, run `cd ~/iot-project && git pull` instead of
+cloning again. Update an older `.env`: set `CAMERA_BACKEND=off` and
+`INFERENCE_BACKEND=off` (the previous `simulated`/`stub` values are rejected).
+The virtual environment must use `--system-site-packages` so Python can see
+the Pi's camera and GPIO libraries.
+
+## 3. Check the real PIR and local database first
 
 ```bash
-.venv/bin/python -m src.main
+cd ~/iot-project
+.venv/bin/python -m src.main --local-only --count 1
 ```
 
-It uses simulated PIR and camera inputs until `.env` is changed for the real
-hardware. Device certificates and `.env.aws` are intentionally excluded from
-Git; copy them to the Pi separately before running the live MQTT test:
+After warm-up, walk in front of the PIR, then step away and return if it was
+already detecting motion. The program prints `Motion detected and saved` and
+exits after one real trigger. Inspect the TinyDB event:
+
+```bash
+.venv/bin/python -c "from tinydb import TinyDB; print(TinyDB('data/events.json').all())"
+```
+
+If no event appears, check VCC/GND/OUT, GPIO17, and the sensor's delay and
+sensitivity knobs. `Ctrl+C` stops a continuous run (`--count` omitted).
+
+## 4. Connect the Pi to AWS IoT Core
+
+Use a **Pi-specific IoT Thing and certificate**. The existing laptop Thing is
+only a laptop test. [docs/aws-setup.md](docs/aws-setup.md) explains the AWS
+bootstrap and manual-console options. The Pi needs these three files in
+`~/iot-project/certs/`:
+
+```text
+AmazonRootCA1.pem
+device.cert.pem
+device.private.key
+```
+
+It also needs `~/iot-project/.env.aws` with its Thing name, allowed MQTT client
+ID, AWS Data-ATS endpoint, exact topic, and certificate paths. Copy
+`.env.mqtt.example` to `.env.aws` and edit it if you provisioned through the
+AWS console. If you used `scripts/aws_bootstrap.py --apply` **on the Pi**, it
+creates these files automatically. Do not commit keys or `.env.aws` to Git.
+
+Subscribe to the exact `MQTT_TOPIC` in the [AWS IoT MQTT test client](https://us-east-1.console.aws.amazon.com/iot/home?region=us-east-1#/test)
+for the same AWS region. Check the MQTT connection first:
 
 ```bash
 .venv/bin/python scripts/mqtt_test.py
 ```
 
-To download later repository updates:
+Then run the real pipeline:
 
 ```bash
-cd ~/iot-project
-git pull
+.venv/bin/python -m src.main
 ```
 
-## What's included now
+Move in front of the PIR. The event appears in `data/events.json` and in the
+AWS test client. The console receives **metadata only**; local image files, if
+camera capture is enabled later, are not uploaded to AWS. To see what still
+needs publishing:
 
-- `scripts/aws_bootstrap.py`: basic AWS IoT Core setup, with a preview mode.
-- `scripts/mqtt_test.py`: a standalone connection test with no sensor, model,
-  image capture, or database dependencies.
-- `.env.mqtt.example`: the few connection settings needed for a manual setup.
-- `requirements-aws.txt`: bootstrap and MQTT dependencies.
-- `requirements-mqtt.txt`: MQTT dependencies only, for already-provisioned devices.
-- `docs/aws-setup.md`: login, setup, expected result, and troubleshooting.
-
-Certificates, private keys, `.env.aws`, and local setup state stay out of Git.
-The device policy permits one client ID and one exact topic. The setup doesn't
-create DynamoDB, IoT rules, IAM roles, or S3 storage.
-
-## Later, when the hardware arrives
-
-Choose the actual camera/PIR behavior, wire the hardware, and then implement
-processing, ML, local storage, and cloud storage as needed. The earlier `src/`,
-`models/`, `.env.example`, and laptop/Pi/ML requirements are saved as deferred
-scaffolding; they are not part of this milestone. We are not extending that logic
-now. Use `scripts/mqtt_test.py` for the current connection check.
-
-## Offline verification
-
-```powershell
-.\.venv\Scripts\python.exe -m compileall -q src scripts tests
-.\.venv\Scripts\python.exe -m unittest discover -s tests -p test_mqtt_setup.py -v
+```bash
+.venv/bin/python -c "from tinydb import TinyDB, Query; print(TinyDB('data/events.json').search(Query().published == False))"
 ```
 
-These tests cover MQTT success/failure behavior and scoped setup permissions
-without making AWS calls. The older pipeline tests additionally require
-`requirements.txt`. Only the live MQTT test proves cloud connectivity.
+The app retries unsent events while it runs. `--count 1` exits after one real
+motion event. Stop a continuous run with `Ctrl+C`.
+
+## Later: camera and model
+
+`CAMERA_BACKEND=off` and `INFERENCE_BACKEND=off` in `.env` are intentional.
+When you have a connected camera, choose `pi` for a CSI camera or `webcam` for
+a USB camera (install `python3-opencv` for the webcam path). A model is not included; only set `INFERENCE_BACKEND=tflite`
+after adding a compatible classifier and labels as described in
+[models/README.md](models/README.md). The app never invents a classification.
+
+## Project files
+
+- `src/main.py`: real motion event loop.
+- `src/pir.py`: HC-SR501 GPIO adapter.
+- `src/database.py`: TinyDB event store and retry outbox.
+- `src/mqtt_client.py`: AWS MQTT/TLS publisher.
+- `src/camera.py`, `src/inference.py`: optional real camera/model adapters.
+- `scripts/aws_bootstrap.py`, `scripts/mqtt_test.py`: AWS setup and connection check.
+- `.env.example`: Pi hardware settings; `.env.mqtt.example`: AWS settings template.

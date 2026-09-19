@@ -1,8 +1,8 @@
 # Adding an actual model
 
 No trained model is included because the recognition task is still undecided.
-The default stub reports `unclassified` with `confidence: null`; it never pretends
-to detect a person. A Pi running TFLite/LiteRT performs edge ML; this is not a
+Inference is off by default, and the application does not generate a prediction
+without a real camera image and compatible model. A Pi running TFLite/LiteRT performs edge ML; this is not a
 microcontroller TensorFlow Lite Micro deployment.
 
 1. Choose a licensed RGB image **classification** model with one input

@@ -66,7 +66,7 @@ class MqttSetupTests(unittest.TestCase):
             with patch.object(mqtt_test.mqtt, "Client", return_value=client), \
                     patch.object(mqtt_test.ssl, "create_default_context"), redirect_stdout(output):
                 result = mqtt_test.run_test(settings)
-                self.assertEqual(result["message"], "hello from laptop")
+                self.assertEqual(result["message"], "hello from device")
         finally:
             self.assertTrue(client.closed)
             if mode != "success":

@@ -1,16 +1,6 @@
-"""Every camera returns an RGB Pillow image."""
+"""Optional real camera adapters. Capture is off until configured."""
 import time
-from PIL import Image, ImageDraw
-
-
-class SimulatedCamera:
-    def capture(self):
-        image = Image.new("RGB", (640, 480), "#203040")
-        ImageDraw.Draw(image).text((24, 24), "SIMULATED CAMERA - no real detection", fill="white")
-        return image
-
-    def close(self):
-        pass
+from PIL import Image
 
 
 class WebcamCamera:
@@ -57,8 +47,8 @@ class PiCamera:
 
 
 def make_camera(config):
+    if config.camera_backend == "off":
+        return None
     if config.camera_backend == "webcam":
         return WebcamCamera(config.webcam_index)
-    if config.camera_backend == "pi":
-        return PiCamera()
-    return SimulatedCamera()
+    return PiCamera()
