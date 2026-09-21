@@ -1,4 +1,4 @@
-"""Physical PIR motion -> TinyDB -> AWS IoT MQTT (optional camera/ML)."""
+"""Physical PIR motion and camera -> TinyDB -> AWS IoT MQTT (optional ML)."""
 import argparse
 from contextlib import ExitStack
 from datetime import datetime, timezone
@@ -61,6 +61,7 @@ def run(config, count=0):
                     image_path = config.image_dir / f"{event['event_id']}.jpg"
                     image.save(image_path, "JPEG")
                     event["image_path"] = str(image_path)
+                    LOG.info("Camera image saved: %s", image_path)
                     if inference:
                         event.update(inference.predict(image))
                 except Exception as exc:

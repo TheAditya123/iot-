@@ -21,7 +21,7 @@ class PipelineTests(unittest.TestCase):
             with patch.object(config_module, "ROOT", Path(directory)), patch.dict(os.environ, {}, clear=True):
                 config = Config.load(local_only=True)
         self.assertEqual(config.gpio, 17)
-        self.assertEqual(config.camera_backend, "off")
+        self.assertEqual(config.camera_backend, "pi")
         self.assertEqual(config.inference_backend, "off")
         self.assertFalse(config.mqtt_enabled)
 

@@ -1,4 +1,4 @@
-"""Optional real camera adapters. Capture is off until configured."""
+"""Real Pi Camera Module 3 and optional USB webcam adapters."""
 import time
 from PIL import Image
 
@@ -28,12 +28,15 @@ class WebcamCamera:
 class PiCamera:
     def __init__(self):
         from picamera2 import Picamera2
+        from libcamera import controls
         self.camera = Picamera2()
         try:
             # Picamera2 BGR888 produces RGB byte order for Pillow.
             self.camera.configure(self.camera.create_still_configuration(
-                main={"size": (640, 480), "format": "BGR888"}))
+                main={"size": (1280, 960), "format": "BGR888"}))
             self.camera.start()
+            # Camera Module 3 supports autofocus; keep it focused between triggers.
+            self.camera.set_controls({"AfMode": controls.AfModeEnum.Continuous})
             time.sleep(2)
         except BaseException:
             self.camera.close()

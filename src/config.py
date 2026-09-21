@@ -65,7 +65,7 @@ class Config:
             warmup=float(get("PIR_WARMUP_SECONDS", "60")),
             cooldown=float(get("PIR_COOLDOWN_SECONDS", "5")),
             data_path=path("DATA_PATH", "data/events.json"),
-            camera_backend=get("CAMERA_BACKEND", "off"),
+            camera_backend=get("CAMERA_BACKEND", "pi"),
             webcam_index=int(get("WEBCAM_INDEX", "0")),
             image_dir=path("IMAGE_DIR", "images"),
             inference_backend=get("INFERENCE_BACKEND", "off"),

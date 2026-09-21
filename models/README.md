@@ -1,6 +1,10 @@
 # Adding an actual model
 
-No trained model is included because the recognition task is still undecided.
+No trained model is included yet. The planned recognition task is identifying
+things such as people and animals in Camera Module 3 photos. Start with a
+pre-trained vision model and fine-tune only if its available labels or accuracy
+do not meet the project's needs. A text-only small language model cannot
+classify a photo; a vision-language model is a different, heavier option.
 Inference is off by default, and the application does not generate a prediction
 without a real camera image and compatible model. A Pi running TFLite/LiteRT performs edge ML; this is not a
 microcontroller TensorFlow Lite Micro deployment.
@@ -20,7 +24,10 @@ microcontroller TensorFlow Lite Micro deployment.
 6. Set `MODEL_OUTPUT_LOGITS=true` only when outputs are logits requiring softmax.
    Leave false for probabilities. Check predictions against known labeled images.
 
-The adapter supports per-tensor int8/uint8 quantization and floating-point
+The existing adapter returns one label for the **whole image**. A model that
+finds multiple people or animals and their positions requires an object
+detection adapter; merely dropping a detector file into `models/` will not
+work. The adapter supports per-tensor int8/uint8 quantization and floating-point
 tensors. It rejects incompatible shapes instead of guessing. Object detection,
 binary sigmoid outputs, segmentation, multiple inputs/outputs, per-axis I/O
 quantization, model-specific crops and letterboxing require another adapter.

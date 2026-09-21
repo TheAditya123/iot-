@@ -1,13 +1,14 @@
-# Raspberry Pi PIR → TinyDB → AWS IoT
+# Raspberry Pi PIR + Camera Module 3 → TinyDB → AWS IoT
 
-This project runs on a Raspberry Pi 5 with a **physical HC-SR501 PIR sensor**.
-Each motion trigger creates one event in local TinyDB (`data/events.json`). The
-Pi publishes the same event as JSON to AWS IoT Core over MQTT/TLS. If AWS is
-offline, the record remains in TinyDB and the app retries it. Camera capture
-and TFLite inference are optional and **off by default**; no sensor readings,
-photos, or predictions are simulated.
+This project runs on a 4 GB Raspberry Pi 5 with a **physical HC-SR501 PIR** and
+**Raspberry Pi Camera Module 3**. Each motion trigger saves a real photo in
+`images/` and an event in local TinyDB (`data/events.json`). The Pi publishes
+the event as JSON to AWS IoT Core over MQTT/TLS. If AWS is offline, the record
+remains in TinyDB and the app retries it. Image recognition is off until a
+compatible model is added. No sensor readings, photos, or predictions are
+simulated.
 
-## 1. Wire the PIR (Pi powered off)
+## 1. Connect the hardware (Pi powered off)
 
 | HC-SR501 | Raspberry Pi 5 header |
 |---|---|
@@ -19,6 +20,12 @@ photos, or predictions are simulated.
 the markings on your particular sensor before connecting it. The Pi GPIO
 input must never receive 5V. The PIR may need about a minute to settle after
 power-on; the app waits 60 seconds by default.
+
+Connect the Camera Module 3 to either Pi 5 `CAM/DISP` port. This combination
+needs a **15-pin camera end to 22-pin Pi 5 end** ribbon cable; the older
+15-to-15-pin camera cable does not fit the Pi 5. Seat the cable fully and close
+both connector latches before powering on. See the [official camera connection
+guide](https://www.raspberrypi.com/documentation/accessories/camera.html).
 
 ## 2. Install on the Pi
 
@@ -35,12 +42,24 @@ cp .env.example .env
 ```
 
 If you cloned the repo earlier, run `cd ~/iot-project && git pull` instead of
-cloning again. Update an older `.env`: set `CAMERA_BACKEND=off` and
+cloning again. Update an older `.env`: set `CAMERA_BACKEND=pi` and
 `INFERENCE_BACKEND=off` (the previous `simulated`/`stub` values are rejected).
 The virtual environment must use `--system-site-packages` so Python can see
 the Pi's camera and GPIO libraries.
 
-## 3. Check the real PIR and local database first
+## 3. Check the camera, PIR, and local database first
+
+With the monitor attached, verify that Raspberry Pi OS sees the camera and can
+take a photo:
+
+```bash
+rpicam-hello --list-cameras
+rpicam-still -o camera-test.jpg
+```
+
+The first command should list Camera Module 3; the second should create
+`camera-test.jpg`. If the camera is not listed, power off and reseat the ribbon
+cable, checking that it is the Pi 5 cable. Then test the full local path:
 
 ```bash
 cd ~/iot-project
@@ -48,11 +67,13 @@ cd ~/iot-project
 ```
 
 After warm-up, walk in front of the PIR, then step away and return if it was
-already detecting motion. The program prints `Motion detected and saved` and
-exits after one real trigger. Inspect the TinyDB event:
+already detecting motion. The program prints `Camera image saved` and
+`Motion detected and saved`, then exits after one real trigger. Open the JPEG
+in `images/` and inspect the TinyDB event:
 
 ```bash
 .venv/bin/python -c "from tinydb import TinyDB; print(TinyDB('data/events.json').all())"
+ls images
 ```
 
 If no event appears, check VCC/GND/OUT, GPIO17, and the sensor's delay and
@@ -91,9 +112,9 @@ Then run the real pipeline:
 ```
 
 Move in front of the PIR. The event appears in `data/events.json` and in the
-AWS test client. The console receives **metadata only**; local image files, if
-camera capture is enabled later, are not uploaded to AWS. To see what still
-needs publishing:
+AWS test client. The console receives **event metadata, including the local
+image path**; image bytes are not uploaded to AWS. To see what still needs
+publishing:
 
 ```bash
 .venv/bin/python -c "from tinydb import TinyDB, Query; print(TinyDB('data/events.json').search(Query().published == False))"
@@ -102,13 +123,17 @@ needs publishing:
 The app retries unsent events while it runs. `--count 1` exits after one real
 motion event. Stop a continuous run with `Ctrl+C`.
 
-## Later: camera and model
+## Later: identifying people and animals
 
-`CAMERA_BACKEND=off` and `INFERENCE_BACKEND=off` in `.env` are intentional.
-When you have a connected camera, choose `pi` for a CSI camera or `webcam` for
-a USB camera (install `python3-opencv` for the webcam path). A model is not included; only set `INFERENCE_BACKEND=tflite`
-after adding a compatible classifier and labels as described in
-[models/README.md](models/README.md). The app never invents a classification.
+`CAMERA_BACKEND=pi` is the Camera Module 3 setting; `INFERENCE_BACKEND=off`
+keeps image recognition disabled while the hardware and AWS flow are verified.
+A small pre-trained vision model is the sensible next step for recognizing
+people or animals on a 4 GB Pi. A language model alone does not read camera
+images. The current optional TFLite adapter supports **single-label image
+classification**; locating multiple objects in one photo requires an object
+detection model and a matching decoder, which are not included yet. See
+[models/README.md](models/README.md) before enabling inference. The app never
+invents a classification.
 
 ## Project files
 
@@ -116,6 +141,6 @@ after adding a compatible classifier and labels as described in
 - `src/pir.py`: HC-SR501 GPIO adapter.
 - `src/database.py`: TinyDB event store and retry outbox.
 - `src/mqtt_client.py`: AWS MQTT/TLS publisher.
-- `src/camera.py`, `src/inference.py`: optional real camera/model adapters.
+- `src/camera.py`, `src/inference.py`: real Camera Module 3 and optional model adapters.
 - `scripts/aws_bootstrap.py`, `scripts/mqtt_test.py`: AWS setup and connection check.
 - `.env.example`: Pi hardware settings; `.env.mqtt.example`: AWS settings template.
