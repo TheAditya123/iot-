@@ -48,13 +48,22 @@ class FakeClient:
 
 class MqttSetupTests(unittest.TestCase):
     def test_device_permissions_use_exact_topic_and_topicfilter(self):
-        policy = aws_bootstrap.device_policy("aws", "us-east-1", "123456789012", "pi", "iot/setup/test")
+        policy = aws_bootstrap.device_policy(
+            "aws", "us-east-1", "123456789012", "pi",
+            ["iot/setup/test", "iot/room/events"]
+        )
         statements = policy["Statement"]
         self.assertEqual(statements[0]["Resource"], "arn:aws:iot:us-east-1:123456789012:client/pi")
         self.assertEqual(statements[1]["Action"], ["iot:Publish", "iot:Receive"])
-        self.assertEqual(statements[1]["Resource"], "arn:aws:iot:us-east-1:123456789012:topic/iot/setup/test")
+        self.assertEqual(statements[1]["Resource"], [
+            "arn:aws:iot:us-east-1:123456789012:topic/iot/setup/test",
+            "arn:aws:iot:us-east-1:123456789012:topic/iot/room/events",
+        ])
         self.assertEqual(statements[2]["Action"], "iot:Subscribe")
-        self.assertEqual(statements[2]["Resource"], "arn:aws:iot:us-east-1:123456789012:topicfilter/iot/setup/test")
+        self.assertEqual(statements[2]["Resource"], [
+            "arn:aws:iot:us-east-1:123456789012:topicfilter/iot/setup/test",
+            "arn:aws:iot:us-east-1:123456789012:topicfilter/iot/room/events",
+        ])
         self.assertNotIn("*", json.dumps(policy))
 
     def exercise(self, mode):
@@ -109,12 +118,16 @@ class MqttSetupTests(unittest.TestCase):
             pass
 
         args = SimpleNamespace(profile=None, region="us-east-1", thing="pi",
-                               topic="iot/setup/test", policy="TestMqttPolicy")
+                               topic="iot/setup/test", event_topic="iot/room/events",
+                               policy="TestMqttPolicy")
         iot, sts, session = MagicMock(), MagicMock(), MagicMock()
         iot.exceptions.ResourceNotFoundException = Missing
         sts.get_caller_identity.return_value = {"Account": "123456789012", "Arn": "arn:aws:iam::123456789012:user/test"}
         session.client.side_effect = lambda service: {"iot": iot, "sts": sts}[service]
-        policy = aws_bootstrap.device_policy("aws", args.region, "123456789012", args.thing, args.topic)
+        policy = aws_bootstrap.device_policy(
+            "aws", args.region, "123456789012", args.thing,
+            [args.topic, args.event_topic]
+        )
         iot.get_policy.side_effect = [Missing(), {"policyDocument": json.dumps(policy)}]
         iot.create_keys_and_certificate.return_value = {
             "certificateArn": "arn:aws:iot:us-east-1:123456789012:cert/test",
@@ -137,7 +150,8 @@ class MqttSetupTests(unittest.TestCase):
             iot.create_policy.assert_called_once()
             self.assertEqual({call.args[0] for call in session.client.call_args_list}, {"iot", "sts"})
             config = (root / ".env.aws").read_text(encoding="utf-8")
-            self.assertIn("MQTT_TOPIC=iot/setup/test", config)
+            self.assertIn("MQTT_TEST_TOPIC=iot/setup/test", config)
+            self.assertIn("MQTT_TOPIC=iot/room/events", config)
             self.assertNotIn("FAKE KEY", config)
             state = json.loads((root / "certs/aws-bootstrap-state.json").read_text(encoding="utf-8"))
             self.assertTrue(state["complete"])

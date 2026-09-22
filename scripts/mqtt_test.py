@@ -56,7 +56,7 @@ class Settings:
         endpoint = setting("MQTT_ENDPOINT")
         if not re.fullmatch(r"[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+", endpoint):
             raise ValueError("Set MQTT_ENDPOINT to your AWS IoT Data-ATS hostname (no https:// or port)")
-        topic = setting("MQTT_TOPIC", "iot/setup/test")
+        topic = setting("MQTT_TEST_TOPIC", setting("MQTT_TOPIC", "iot/setup/test"))
         if not re.fullmatch(r"[A-Za-z0-9_/-]{1,256}", topic):
             raise ValueError("MQTT_TOPIC must be an exact topic without wildcards")
         if setting("MQTT_PORT", "8883") != "8883":

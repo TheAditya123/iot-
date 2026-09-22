@@ -21,12 +21,14 @@ class Config:
     camera_backend: str
     webcam_index: int
     image_dir: Path
+    env_sensor_enabled: bool
+    i2c_bus: int
+    bme280_address: int | None
     inference_backend: str
     model_path: Path
-    labels_path: Path
-    input_mean: float
-    input_std: float
-    output_logits: bool
+    person_confidence_threshold: float
+    dashboard_host: str
+    dashboard_port: int
     mqtt_enabled: bool
     endpoint: str
     port: int
@@ -57,6 +59,10 @@ class Config:
                 raise ValueError(f"{name} must be true or false")
             return value == "true"
 
+        def i2c_address():
+            value = get("BME280_ADDRESS", "auto").lower()
+            return None if value == "auto" else int(value, 0)
+
         device_id = get("DEVICE_ID", "room-monitor-pi")
         config = cls(
             device_id=device_id,
@@ -68,16 +74,18 @@ class Config:
             camera_backend=get("CAMERA_BACKEND", "pi"),
             webcam_index=int(get("WEBCAM_INDEX", "0")),
             image_dir=path("IMAGE_DIR", "images"),
+            env_sensor_enabled=boolean("ENV_SENSOR_ENABLED", "false"),
+            i2c_bus=int(get("BME280_I2C_BUS", "1")),
+            bme280_address=i2c_address(),
             inference_backend=get("INFERENCE_BACKEND", "off"),
-            model_path=path("MODEL_PATH", "models/model.tflite"),
-            labels_path=path("LABELS_PATH", "models/labels.txt"),
-            input_mean=float(get("MODEL_INPUT_MEAN", "0")),
-            input_std=float(get("MODEL_INPUT_STD", "255")),
-            output_logits=boolean("MODEL_OUTPUT_LOGITS", "false"),
+            model_path=path("MODEL_PATH", "models/object_detection_nanodet_2022nov.onnx"),
+            person_confidence_threshold=float(get("PERSON_CONFIDENCE_THRESHOLD", "0.5")),
+            dashboard_host=get("DASHBOARD_HOST", "0.0.0.0"),
+            dashboard_port=int(get("DASHBOARD_PORT", "5000")),
             mqtt_enabled=not local_only,
             endpoint=get("MQTT_ENDPOINT"),
             port=int(get("MQTT_PORT", "8883")),
-            topic=get("MQTT_TOPIC", "iot/setup/test"),
+            topic=get("MQTT_TOPIC", "iot/room/events"),
             ca_cert=path("MQTT_CA_CERT", "certs/AmazonRootCA1.pem"),
             client_cert=path("MQTT_CLIENT_CERT", "certs/device.cert.pem"),
             private_key=path("MQTT_PRIVATE_KEY", "certs/device.private.key"),
@@ -89,16 +97,24 @@ class Config:
         if config.gpio not in range(0, 28):
             raise ValueError("PIR_GPIO must be a BCM GPIO number from 0 to 27")
         if not all(math.isfinite(v) for v in (config.warmup, config.cooldown, config.timeout,
-                                               config.input_mean, config.input_std)):
+                                               config.person_confidence_threshold)):
             raise ValueError("Numeric settings must be finite")
-        if config.warmup < 0 or config.cooldown < 0 or config.timeout <= 0 or config.input_std <= 0:
-            raise ValueError("Warmup/cooldown must be nonnegative; timeout/std must be positive")
+        if config.warmup < 0 or config.cooldown < 0 or config.timeout <= 0:
+            raise ValueError("Warmup/cooldown must be nonnegative; timeout must be positive")
+        if config.i2c_bus < 0:
+            raise ValueError("BME280_I2C_BUS must be nonnegative")
+        if config.bme280_address not in {None, 0x76, 0x77}:
+            raise ValueError("BME280_ADDRESS must be auto, 0x76 or 0x77")
         if config.camera_backend not in {"off", "pi", "webcam"}:
             raise ValueError("CAMERA_BACKEND must be off, pi or webcam")
-        if config.inference_backend not in {"off", "tflite"}:
-            raise ValueError("INFERENCE_BACKEND must be off or tflite")
-        if config.inference_backend != "off" and config.camera_backend == "off":
-            raise ValueError("INFERENCE_BACKEND=tflite requires a camera")
+        if config.inference_backend not in {"off", "nanodet"}:
+            raise ValueError("INFERENCE_BACKEND must be off or nanodet")
+        if config.inference_backend == "nanodet" and config.camera_backend == "off":
+            raise ValueError("INFERENCE_BACKEND=nanodet requires a camera")
+        if not 0 < config.person_confidence_threshold <= 1:
+            raise ValueError("PERSON_CONFIDENCE_THRESHOLD must be greater than 0 and at most 1")
+        if not 1 <= config.dashboard_port <= 65535:
+            raise ValueError("DASHBOARD_PORT must be 1-65535")
         if config.mqtt_enabled:
             if not re.fullmatch(r"[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+", config.endpoint):
                 raise ValueError("Set MQTT_ENDPOINT in .env.aws to the AWS IoT Data-ATS hostname")

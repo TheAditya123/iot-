@@ -1,2 +1,2 @@
-# Optional: platform/Python wheel availability varies. See models/README.md.
-ai-edge-litert==2.2.0
+# CPU detector runtime. The pinned model is downloaded separately; see models/README.md.
+opencv-python-headless==4.12.0.88

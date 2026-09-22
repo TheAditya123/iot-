@@ -1,8 +1,8 @@
 # Basic AWS IoT + MQTT setup
 
 Goal: give the Raspberry Pi its own AWS IoT certificate and confirm MQTT works
-before running the real PIR → TinyDB → AWS application. The test script sends a
-single connection-check message; `src.main` publishes real PIR events.
+before running the real PIR → TinyDB → AWS application. The test script uses
+`iot/setup/test`; `src.main` publishes real event metadata to `iot/room/events`.
 
 ## 1. Sign in to the AWS account
 
@@ -57,11 +57,14 @@ AWS IoT usage charges may apply.
 |---|---|
 | IoT Thing / MQTT client ID | `room-monitor-pi` |
 | Device policy | `CameraPirMqttPolicy` |
-| MQTT topic | `iot/setup/test` |
+| MQTT test topic | `iot/setup/test` |
+| Application event topic | `iot/room/events` |
 | Transport | TLS with client certificate, port 8883 |
 | Endpoint | Your account's IoT Data-ATS hostname |
 
-The script creates an inactive X.509 certificate, saves its private key locally,
+The device policy grants connect permission for one client ID and publish,
+receive, and subscribe permission for only the two exact topics above. The
+script creates an inactive X.509 certificate, saves its private key locally,
 attaches the certificate to the Thing and policy, then activates it. It saves:
 
 - `certs/device.cert.pem`
@@ -108,7 +111,9 @@ too. The browser console test client requires its own IAM test permissions.
    |---|---|
    | `iot:Connect` | `arn:aws:iot:REGION:ACCOUNT_ID:client/room-monitor-pi` |
    | `iot:Publish`, `iot:Receive` | `arn:aws:iot:REGION:ACCOUNT_ID:topic/iot/setup/test` |
+   | `iot:Publish`, `iot:Receive` | `arn:aws:iot:REGION:ACCOUNT_ID:topic/iot/room/events` |
    | `iot:Subscribe` | `arn:aws:iot:REGION:ACCOUNT_ID:topicfilter/iot/setup/test` |
+   | `iot:Subscribe` | `arn:aws:iot:REGION:ACCOUNT_ID:topicfilter/iot/room/events` |
 
    Each statement uses `Effect: Allow`. Attach this policy to the certificate
    and attach the certificate to the Thing.
@@ -131,6 +136,17 @@ too. The browser console test client requires its own IAM test permissions.
    need an AWS CLI login or a setup profile. Do not run the bootstrap over
    manually downloaded certificates; keep using this manual setup.
 
+The resulting `.env.aws` uses separate values:
+
+```dotenv
+MQTT_TEST_TOPIC=iot/setup/test
+MQTT_TOPIC=iot/room/events
+```
+
+Older `.env.aws` files containing only `MQTT_TOPIC=iot/setup/test` still work
+for the connectivity test, but the application needs the event topic and policy
+permission before it can publish smart-room events.
+
 If the AWS **Connect one device** wizard generated a sample command with a
 different `--client_id` (for example, `basicPubSub`), set that exact value as
 `MQTT_CLIENT_ID` in `.env.aws`. Keep `DEVICE_ID` as the Thing/device name.
@@ -152,6 +168,9 @@ different `--client_id` (for example, `basicPubSub`), set that exact value as
 - Existing state from the earlier DynamoDB bootstrap stops with a configuration
   mismatch. Keep its credentials/state for review; this version neither changes
   nor deletes any previously provisioned DynamoDB/rule/IAM resources.
+- Existing state from the earlier one-topic MQTT bootstrap also stops with a
+  configuration mismatch. Preserve its certificate, add the event-topic policy
+  entries in AWS, and update `.env.aws`; do not delete a working identity.
 - If certificate creation was interrupted before both local credential files
   were saved, its private key cannot be downloaded again. Inspect the certificate
   ID in state, detach/deactivate/delete that incomplete certificate in AWS, remove

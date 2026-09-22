@@ -13,6 +13,7 @@ data/*
 images/*
 !images/.gitkeep
 models/*.tflite
+models/*.onnx
 *.pem
 *.key
 *.p12
