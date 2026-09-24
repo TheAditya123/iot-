@@ -1,10 +1,9 @@
-# IoT++ Smart Room Occupancy + Environment Monitor
+# IoT++ Smart Room Occupancy Monitor
 
 This Raspberry Pi 5 project uses a physical PIR as an inexpensive event trigger.
-Motion wakes the camera path, a small object detector counts people locally, and
-an optional BME280 supplies room conditions. Every event is saved to TinyDB
-before its metadata is sent to AWS IoT Core over MQTT/TLS. Images remain on the
-Pi.
+Motion wakes the camera path and a small object detector counts people locally.
+Every event is saved to TinyDB before its metadata is sent to AWS IoT Core over
+MQTT/TLS. Images remain on the Pi.
 
 The lab question is: **Can event-triggered edge AI reduce compute use while
 maintaining useful occupancy detection?** The event records already include
@@ -17,8 +16,6 @@ HC-SR501 rising edge
         |
         v
 Pi camera -> local NanoDet person count
-        |                |
-        +---- BME280 ----+
                  |
                  v
        TinyDB data/events.json
@@ -33,16 +30,14 @@ This project is past the architecture-only stage. The Raspberry Pi now runs the
 Python application, the local database, the person detector, the MQTT client,
 and the dashboard. The Pi has also been provisioned as an AWS IoT device and can
 authenticate with its own X.509 device certificate. The remaining work is the
-physical sensor path: Raspberry Pi OS currently sees no CSI camera, the PIR
-signal is not reaching GPIO17, and header I2C must be enabled before a connected
-BME280 can be tested.
+physical sensor path: Raspberry Pi OS currently sees no CSI camera and the PIR
+signal is not reaching GPIO17.
 
 The distinction matters when describing the progress. We have proved each major
 software and network component, including the real AWS broker connection. We
 have not claimed a successful physical room event, because the current wiring
-cannot yet provide a real camera frame, PIR edge, or BME280 measurement. The
-application deliberately refuses to replace missing hardware data with made-up
-values.
+cannot yet provide a real camera frame or PIR edge. The application deliberately
+refuses to replace missing hardware data with made-up values.
 
 | Area | What has been completed | Evidence on this Pi |
 |---|---|---|
@@ -51,10 +46,9 @@ values.
 | Local persistence | TinyDB event log and MQTT outbox implemented with locking, atomic replacement, and restart recovery | 500 writes plus 800 concurrent dashboard-style reads retained all 500 events |
 | AWS IoT | Thing, exact-topic policy, X.509 device identity, TLS, QoS 1 publishing, and acknowledgements configured | 12 of 12 soak messages acknowledged; connection and outbox tests pass |
 | Dashboard | Flask page and JSON endpoints read directly from TinyDB | 180 of 180 requests succeeded during a five-minute soak |
-| Reliability | Hardware errors are retained with the motion event; interrupted JSON/JPEG/config writes preserve the last complete file | 22 automated tests pass |
+| Reliability | Hardware errors are retained with the motion event; interrupted JSON/JPEG/config writes preserve the last complete file | 21 automated tests pass |
 | Physical camera | Software stack is installed, but no CSI sensor enumerates | `rpicam-hello --list-cameras` reports no cameras |
 | Physical PIR | GPIO17 and its Linux driver work, but the HC-SR501 signal path appears floating | GPIO17 stayed LOW during separate two- and five-minute tests; internal pull test passed |
-| Physical BME280 | Driver and compensation code are ready | Header bus `/dev/i2c-1` is currently disabled, so the sensor cannot yet be probed |
 
 The detailed command output and hardware reasoning are recorded in
 [the Raspberry Pi bring-up report](docs/pi-bringup-status.md).
@@ -74,12 +68,10 @@ The final event path is intentionally sequential and local-first:
    time. For example, one accepted person box means `people_count: 1`. A cloud
    or dashboard consumer can interpret any count above zero as “person
    detected” or “room occupied.”
-5. If the physical BME280 is enabled, the Pi takes one fresh forced-mode
-   temperature, humidity, and pressure measurement.
-6. The complete event is written to TinyDB before networking begins.
-7. The MQTT publisher sends only the JSON metadata to AWS IoT Core on
+5. The complete event is written to TinyDB before networking begins.
+6. The MQTT publisher sends only the JSON metadata to AWS IoT Core on
    `iot/room/events`. The local JPEG stays on the Pi.
-8. TinyDB marks the event published only after the MQTT client receives the QoS
+7. TinyDB marks the event published only after the MQTT client receives the QoS
    1 publish acknowledgement. If Wi-Fi or AWS is unavailable, the row remains
    pending and is retried after reconnection or process restart.
 
@@ -100,7 +92,7 @@ The Pi currently uses two exact MQTT topics:
   publishes a unique message, waits for AWS to acknowledge it, and confirms the
   same message returns through the broker.
 - `iot/room/events` is the application topic. The production publisher sends
-  motion, person-count, inference, environmental, and timestamp metadata here.
+  motion, person-count, inference, image-path, and timestamp metadata here.
 
 The live tests prove that this Pi can connect securely, act as an MQTT
 publisher, and receive a QoS 1 acknowledgement from AWS. The outbox test also
@@ -122,10 +114,7 @@ the fields and are not claimed sensor readings:
   "image_path": "/local/path/to/image.jpg",
   "people_count": 1,
   "person_confidences": [0.82],
-  "inference_ms": 120.4,
-  "temperature_c": 23.71,
-  "humidity_pct": 46.18,
-  "pressure_hpa": 1007.82
+  "inference_ms": 120.4
 }
 ```
 
@@ -169,6 +158,13 @@ writes are protected by a process lock and use sync plus atomic replacement, so
 the dashboard cannot read a half-written JSON file and a power interruption is
 less likely to corrupt the last valid history.
 
+The JPEG itself is stored as `images/<event_id>.jpg` inside the repository. On
+this Pi that directory is `/home/iot/iot-project/images/`. The `images/`
+directory is ignored by Git, so room photographs are neither committed to
+GitHub nor uploaded by the MQTT publisher. At present the directory contains no
+captured JPEG because the CSI camera has not enumerated; only the tracked empty
+directory marker exists.
+
 ## Remaining work before the physical MVP is complete
 
 These tasks are deliberately listed as incomplete rather than hidden behind
@@ -179,20 +175,18 @@ software simulations:
    `rpicam-still` creates a nonempty JPEG.
 2. Verify the HC-SR501 labels and wiring: VCC to physical pin 2, GND to pin 6,
    and OUT to physical pin 11 (BCM17). Warm it up and capture a real rising edge.
-3. Enable header I2C, reboot, wire the BME280 to 3.3 V/GND/SDA/SCL, and confirm
-   address `0x76` or `0x77` with `i2cdetect -y 1`.
-4. Run one complete real event: PIR edge → JPEG → person count → BME280 reading
-   → TinyDB row → AWS acknowledgement → dashboard display.
-5. Collect several real room scenes and tune the confidence threshold and
+3. Run one complete real event: PIR edge → JPEG → person count → TinyDB row
+   → AWS acknowledgement → dashboard display.
+4. Collect several real room scenes and tune the confidence threshold and
    camera placement. The two validation images prove that the model executes;
    they are not a complete accuracy study.
-6. Run the planned experiment comparing continuous inference against
+5. Run the planned experiment comparing continuous inference against
    PIR-triggered inference using inference count, latency, CPU use, and CPU
    temperature. The existing 500-inference stress run already shows why this
    comparison matters: continuous inference reached the Pi's thermal limit.
-7. Add an AWS IoT Rule and DynamoDB only if cloud-side historical storage is
+6. Add an AWS IoT Rule and DynamoDB only if cloud-side historical storage is
    required by the course. Local operation and MQTT do not depend on it.
-8. Add and enable a systemd service only after the real hardware path passes
+7. Add and enable a systemd service only after the real hardware path passes
    manually, so startup automation does not hide wiring failures.
 
 ## Bill of materials
@@ -200,7 +194,6 @@ software simulations:
 - Raspberry Pi 5 with Raspberry Pi OS, power supply, and network access
 - Raspberry Pi-compatible CSI camera and the correct Pi 5 ribbon cable
 - HC-SR501 PIR motion sensor
-- Optional BME280 breakout with I2C support
 - Female-to-female jumper wires
 
 The code does not assume the camera model. `rpicam-hello --list-cameras` reports
@@ -221,25 +214,13 @@ HC-SR501:
 are not reliable. Never drive a Pi GPIO input with 5 V. A normal HC-SR501 output
 is approximately 3.3 V, but check an unfamiliar board before connecting it.
 
-BME280:
-
-| BME280 | Raspberry Pi 5 header |
-|---|---|
-| VIN / VCC | 3.3V, physical pin 1 |
-| GND | Ground, physical pin 9 |
-| SDA | GPIO2 / SDA1, physical pin 3 |
-| SCL | GPIO3 / SCL1, physical pin 5 |
-
-Do not power the BME280 from 5 V unless the exact breakout board explicitly
-supports it. The software probes only the standard addresses `0x76` and `0x77`.
-
 ## Raspberry Pi installation
 
 ```bash
 sudo apt update
 sudo apt install -y \
   git python3-venv python3-gpiozero python3-lgpio python3-picamera2 \
-  python3-numpy python3-pil python3-smbus2 i2c-tools
+  python3-numpy python3-pil
 
 git clone https://github.com/TheAditya123/iot-.git ~/iot-project
 cd ~/iot-project
@@ -251,7 +232,7 @@ cp .env.example .env
 
 Use `git pull --ff-only` in an existing clean checkout. The venv needs
 `--system-site-packages` because Raspberry Pi OS supplies Picamera2, GPIO Zero,
-lgpio, smbus2, NumPy, and Pillow. Project packages remain inside `.venv`.
+lgpio, NumPy, and Pillow. Project packages remain inside `.venv`.
 
 The model downloader obtains the 3.8 MB OpenCV Zoo NanoDet model and verifies
 its SHA-256 hash before placing it under `models/`. The model is ignored by Git.
@@ -282,10 +263,6 @@ DATA_PATH=data/events.json
 CAMERA_BACKEND=pi
 IMAGE_DIR=images
 
-ENV_SENSOR_ENABLED=false
-BME280_I2C_BUS=1
-BME280_ADDRESS=auto
-
 INFERENCE_BACKEND=nanodet
 MODEL_PATH=models/object_detection_nanodet_2022nov.onnx
 PERSON_CONFIDENCE_THRESHOLD=0.5
@@ -294,8 +271,7 @@ DASHBOARD_HOST=0.0.0.0
 DASHBOARD_PORT=5000
 ```
 
-Keep the BME280 disabled until it is wired and detected. Production modes never
-fall back to simulated motion, environmental values, images, or predictions.
+Production modes never fall back to simulated motion, images, or predictions.
 
 ## Verify the camera
 
@@ -328,32 +304,6 @@ to high transition on GPIO17:
 Let the sensor become inactive, then walk across its field of view. If it stays
 active, reduce its delay knob, step away, and retry. The code triggers on the
 rising edge and applies `PIR_COOLDOWN_SECONDS` to avoid duplicate events.
-
-## Verify the BME280
-
-Enable I2C once, then reboot:
-
-```bash
-sudo raspi-config nonint do_i2c 0
-sudo reboot
-```
-
-After reconnecting:
-
-```bash
-i2cdetect -y 1
-```
-
-A real device should appear at `76` or `77`. Set `ENV_SENSOR_ENABLED=true` in
-`.env`, leave `BME280_ADDRESS=auto`, and test it:
-
-```bash
-.venv/bin/python scripts/hardware_test.py environment
-```
-
-The driver reads the BME280's own calibration registers and returns compensated
-temperature, humidity, and pressure. If sensing is enabled while I2C or the
-device is absent, startup fails with a direct error instead of inventing values.
 
 ## Local person counting
 
@@ -426,8 +376,8 @@ Use local mode before configuring AWS:
 ```
 
 After the PIR warm-up, create one new motion transition. The application saves
-the JPEG, performs local inference, reads the enabled BME280, persists the event,
-and exits. Inspect the real output:
+the JPEG, performs local inference, persists the event, and exits. Inspect the
+real output:
 
 ```bash
 find images -maxdepth 1 -type f -name '*.jpg' -printf '%TY-%Tm-%Td %TT %p %s bytes\n'
@@ -446,10 +396,7 @@ A complete event has the available real fields, for example:
   "image_path": "/local/path/to/image.jpg",
   "people_count": 1,
   "person_confidences": [0.82],
-  "inference_ms": 120.4,
-  "temperature_c": 23.71,
-  "humidity_pct": 46.18,
-  "pressure_hpa": 1007.82
+  "inference_ms": 120.4
 }
 ```
 
@@ -494,7 +441,7 @@ instead of silently reusing incomplete files.
 The first command must receive the exact unique message it published. The
 second creates a temporary, clearly labelled non-sensor record and proves the
 production TinyDB outbox is marked published only after AWS acknowledges it.
-The third uses the real PIR/camera/sensor pipeline and publishes pending events
+The third uses the real PIR/camera pipeline and publishes pending events
 to `MQTT_TOPIC`. DynamoDB is intentionally outside this milestone. If required
 later, route MQTT events with an AWS IoT Rule instead of placing database
 credentials on the Pi.
@@ -516,7 +463,7 @@ Run the monitor and dashboard in separate terminals:
 
 On the Pi, open `http://127.0.0.1:5000`. From the same LAN, use
 `http://PI_ADDRESS:5000`. The dashboard reads TinyDB and shows the latest motion,
-people count, room conditions, timestamp, inference time, publish state, and a
+people count, local image path, timestamp, inference time, publish state, and a
 recent event table. JSON is available at `/api/status` and `/api/events`.
 
 ```bash
@@ -533,14 +480,14 @@ curl http://127.0.0.1:5000/api/status
 
 These checks do not fake a successful hardware or AWS result. Fakes exist only
 inside unit tests, where they verify full event assembly, hardware-error
-preservation, compensation, MQTT acknowledgements, persistent retry, detector
+preservation, MQTT acknowledgements, persistent retry, detector
 preprocessing, and dashboard output. Use `scripts/hardware_test.py`,
 `scripts/inference_test.py`, and `scripts/mqtt_test.py` for real-device checks.
 
 ## Troubleshooting
 
 - See [the dated Pi bring-up report](docs/pi-bringup-status.md) for the observed
-  device evidence behind the current camera, PIR, and I2C conclusions.
+  device evidence behind the current camera and PIR conclusions.
 - **No cameras available:** shut down, disconnect power, and reseat both ribbon
   ends with the contacts facing the connector contacts. Confirm the Pi 5 cable
   and try the other CAM/DISP connector. If `camera_auto_detect=1` loads no sensor
@@ -548,9 +495,6 @@ preprocessing, and dashboard output. Use `scripts/hardware_test.py`,
   Use a manual overlay only after identifying a third-party sensor.
 - **PIR never changes:** verify 5V, ground, and OUT to physical pin 11; allow the
   warm-up; reduce the module delay; confirm `pinctrl get 17` shows an input.
-- **No `/dev/i2c-1`:** enable I2C with `raspi-config` and reboot.
-- **No `76` or `77` in `i2cdetect`:** power down and recheck 3.3V, ground, SDA,
-  and SCL. Confirm the board is a BME280 rather than a BMP280.
 - **Model missing:** run `.venv/bin/python scripts/download_model.py`.
 - **Low person count:** improve lighting and camera angle, then consider lowering
   the confidence threshold slightly. Do not substitute a fake count.
@@ -577,21 +521,20 @@ safe templates and remain versioned.
 
 | File | Responsibility |
 |---|---|
-| `src/main.py` | Coordinates PIR edges, capture, inference, BME280 reads, local persistence, and MQTT retry in that order |
+| `src/main.py` | Coordinates PIR edges, capture, inference, local persistence, and MQTT retry in that order |
 | `src/config.py` | Loads and validates hardware settings from `.env` and AWS/TLS settings from `.env.aws` |
 | `src/pir.py` | Opens the real HC-SR501 input through GPIO Zero using BCM numbering |
 | `src/camera.py` | Captures through Picamera2 or an explicitly selected USB webcam and installs complete JPEGs atomically |
 | `src/inference.py` | Preprocesses images, runs NanoDet through OpenCV DNN, decodes person boxes, applies NMS, and measures latency |
-| `src/environmental.py` | Detects a BME280 at `0x76`/`0x77`, reads its factory calibration, and calculates compensated measurements |
 | `src/database.py` | Stores TinyDB events, maintains `published` state, locks readers/writers, and atomically replaces JSON |
 | `src/mqtt_client.py` | Establishes the X.509/TLS MQTT connection, publishes with QoS 1, and drains the persistent outbox |
 | `src/dashboard.py` | Serves the current status, recent event table, `/api/status`, and `/api/events` directly from TinyDB |
-| `scripts/hardware_test.py` | Performs focused real camera, PIR, or BME280 tests and explains the observed hardware failure mode |
+| `scripts/hardware_test.py` | Performs focused real camera or PIR tests and explains the observed hardware failure mode |
 | `scripts/inference_test.py` | Runs the real model on a supplied image and prints hashes, count, confidences, and latency |
 | `scripts/download_model.py` | Downloads the pinned ONNX file and refuses it if the SHA-256 checksum differs |
 | `scripts/mqtt_test.py` | Proves a unique QoS 1 message is acknowledged and returned through `iot/setup/test` |
 | `scripts/outbox_test.py` | Proves the production TinyDB and publisher mark a temporary event only after AWS acknowledgement |
 | `scripts/aws_bootstrap.py` | Creates or reuses the AWS IoT Thing, exact-topic policy, certificate, endpoint configuration, and secure local files |
 
-Add a systemd service only after camera, PIR, BME280, local inference, and MQTT
+Add a systemd service only after camera, PIR, local inference, and MQTT
 have each passed manually. That keeps initial hardware debugging visible.

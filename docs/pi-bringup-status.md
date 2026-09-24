@@ -18,10 +18,10 @@ No simulated sensor values were inserted into the production database.
   server timestamp, which is required for reliable TLS certificate checks.
 - Before sustained inference, the Pi reported no undervoltage or thermal
   throttling (`get_throttled=0x0`).
-- The Python environment imports GPIO Zero, lgpio, Picamera2, smbus2, TinyDB,
+- The Python environment imports GPIO Zero, lgpio, Picamera2, TinyDB,
   OpenCV, Flask, Paho MQTT, boto3, and AWS CRT.
-- All 22 offline tests pass, including full local event assembly, preservation
-  of partial hardware-failure events, BME280 compensation, MQTT acknowledgments,
+- All 21 offline tests pass, including full local event assembly, preservation
+  of partial hardware-failure events, MQTT acknowledgments,
   exact-topic IoT policy generation, atomic TinyDB/JPEG/private-file recovery,
   dashboard data, and persistent outbox retry.
 - The pinned 3.8 MB OpenCV Zoo NanoDet model matches SHA-256
@@ -117,29 +117,9 @@ VCC to physical pin 2, GND to physical pin 6, and OUT to physical pin 11. Raise
 sensitivity, allow warmup, and walk across the sensor view while rerunning
 `scripts/hardware_test.py pir`.
 
-## BME280: why it is not working yet
-
-Observed evidence:
-
-- `/dev/i2c-1` does not exist.
-- `raspi-config nonint get_i2c` returns `1`, meaning header I2C is disabled.
-- Only internal buses 13 and 14 exist; these are not the GPIO2/GPIO3 header bus.
-- The Python BME280 driver correctly reports that `/dev/i2c-1` does not exist
-  and that header I2C must be enabled before rebooting.
-- Enabling the sensor in the production pipeline exits nonzero with the exact
-  missing-device path and I2C-enable command; it does not invent measurements.
-
-The OS cannot communicate with any header I2C sensor until bus 1 is enabled.
-This is independent of the BME280 library and does not prove a BME280 is wired.
-
-Required privileged/physical correction: run
-`sudo raspi-config nonint do_i2c 0`, power off, wire BME280 VCC to 3.3 V, GND to
-ground, SDA to physical pin 3, and SCL to physical pin 5, then boot and check
-`i2cdetect -y 1` for `76` or `77`.
-
 ## Completion gate
 
-After the three physical paths are corrected, one real PIR edge must produce a
-real JPEG, a measured person count and latency, optional real BME280 readings,
-an atomic TinyDB row, an AWS acknowledgment, and visible dashboard data. The
-software is configured for that sequence and does not fall back to fake values.
+After the camera and PIR paths are corrected, one real PIR edge must produce a
+real JPEG, a measured person count and latency, an atomic TinyDB row, an AWS
+acknowledgment, and visible dashboard data. The software is configured for that
+sequence and does not fall back to fake values.

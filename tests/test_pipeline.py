@@ -16,7 +16,6 @@ from src.camera import save_jpeg_atomic
 from src.config import Config
 from src.database import EventStore
 from src.dashboard import create_app
-from src.environmental import BME280
 from src.inference import letterbox
 from src.main import run
 from src.mqtt_client import flush_outbox
@@ -51,17 +50,6 @@ class PipelineTests(unittest.TestCase):
                     "inference_backend": "nanodet",
                 }
 
-        class Environment:
-            def read(self):
-                return {
-                    "temperature_c": 22.5,
-                    "humidity_pct": 40.0,
-                    "pressure_hpa": 1000.0,
-                }
-
-            def close(self):
-                pass
-
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             config = SimpleNamespace(
@@ -72,15 +60,13 @@ class PipelineTests(unittest.TestCase):
                 cooldown=0,
                 camera_backend="pi",
                 inference_backend="nanodet",
-                env_sensor_enabled=True,
                 mqtt_enabled=False,
                 device_id="test-pi",
                 timeout=0.1,
             )
             with patch("src.main.open_pir", return_value=PIR()), \
                     patch("src.main.make_camera", return_value=Camera()), \
-                    patch("src.main.make_inference", return_value=Inference()), \
-                    patch("src.main.make_environment", return_value=Environment()):
+                    patch("src.main.make_inference", return_value=Inference()):
                 run(config, count=1)
 
             store = EventStore(config.data_path)
@@ -93,9 +79,6 @@ class PipelineTests(unittest.TestCase):
             self.assertTrue(event["motion"])
             self.assertEqual(event["pir_gpio"], 17)
             self.assertEqual(event["people_count"], 1)
-            self.assertEqual(event["temperature_c"], 22.5)
-            self.assertEqual(event["humidity_pct"], 40.0)
-            self.assertEqual(event["pressure_hpa"], 1000.0)
             self.assertTrue(Path(event["image_path"]).is_file())
             self.assertFalse(rows[0]["published"])
 
@@ -118,13 +101,6 @@ class PipelineTests(unittest.TestCase):
             def close(self):
                 pass
 
-        class BrokenEnvironment:
-            def read(self):
-                raise OSError("I2C device stopped responding")
-
-            def close(self):
-                pass
-
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             config = SimpleNamespace(
@@ -135,7 +111,6 @@ class PipelineTests(unittest.TestCase):
                 cooldown=0,
                 camera_backend="pi",
                 inference_backend="nanodet",
-                env_sensor_enabled=True,
                 mqtt_enabled=False,
                 device_id="test-pi",
                 timeout=0.1,
@@ -143,7 +118,6 @@ class PipelineTests(unittest.TestCase):
             with patch("src.main.open_pir", return_value=PIR()), \
                     patch("src.main.make_camera", return_value=BrokenCamera()), \
                     patch("src.main.make_inference"), \
-                    patch("src.main.make_environment", return_value=BrokenEnvironment()), \
                     patch("src.main.LOG"):
                 run(config, count=1)
 
@@ -155,7 +129,6 @@ class PipelineTests(unittest.TestCase):
             event = rows[0]["event"]
             self.assertTrue(event["motion"])
             self.assertEqual(event["capture_error"], "camera disconnected during capture")
-            self.assertEqual(event["environment_error"], "I2C device stopped responding")
             self.assertNotIn("image_path", event)
             self.assertNotIn("people_count", event)
             self.assertFalse(rows[0]["published"])
@@ -167,7 +140,6 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(config.gpio, 17)
         self.assertEqual(config.camera_backend, "pi")
         self.assertEqual(config.inference_backend, "off")
-        self.assertFalse(config.env_sensor_enabled)
         self.assertFalse(config.mqtt_enabled)
 
     def test_cloud_mode_requires_device_endpoint_and_certs(self):
@@ -287,42 +259,14 @@ class PipelineTests(unittest.TestCase):
         self.assertTrue(np.all(actual[104:312] == 255))
         self.assertTrue(np.all(actual[:104] == 0))
 
-    def test_bme280_compensates_datasheet_temperature_and_pressure(self):
-        class Bus:
-            def write_byte_data(self, *args):
-                pass
-
-            def read_byte_data(self, address, register):
-                return 0
-
-            def read_i2c_block_data(self, address, register, length):
-                adc_p, adc_t, adc_h = 415148, 519888, 32257
-                return [
-                    adc_p >> 12, (adc_p >> 4) & 0xFF, (adc_p & 0x0F) << 4,
-                    adc_t >> 12, (adc_t >> 4) & 0xFF, (adc_t & 0x0F) << 4,
-                    adc_h >> 8, adc_h & 0xFF,
-                ]
-
-        sensor = BME280.__new__(BME280)
-        sensor.bus, sensor.address = Bus(), 0x76
-        sensor.calibration = {
-            "T1": 27504, "T2": 26435, "T3": -1000,
-            "P1": 36477, "P2": -10685, "P3": 3024, "P4": 2855,
-            "P5": 140, "P6": -7, "P7": 15500, "P8": -14600, "P9": 6000,
-            "H1": 75, "H2": 362, "H3": 0, "H4": 315, "H5": 50, "H6": 30,
-        }
-        reading = sensor.read()
-        self.assertEqual(reading["temperature_c"], 25.08)
-        self.assertAlmostEqual(reading["pressure_hpa"], 1006.53, places=1)
-        self.assertTrue(0 <= reading["humidity_pct"] <= 100)
-
     def test_dashboard_reads_real_event_fields_from_tinydb(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "events.json"
             store = EventStore(path)
             try:
                 store.add({"event_id": "one", "timestamp": "2026-01-01T00:00:00Z",
-                           "motion": True, "people_count": 2, "temperature_c": 22.5})
+                           "motion": True, "people_count": 2,
+                           "image_path": "images/one.jpg"})
             finally:
                 store.close()
             client = create_app(path).test_client()

@@ -13,7 +13,6 @@ if str(ROOT) not in sys.path:
 
 from src.camera import make_camera, save_jpeg_atomic
 from src.config import Config
-from src.environmental import BME280
 from src.pir import open_pir
 
 
@@ -94,37 +93,9 @@ def test_pir(config, timeout):
         pir.close()
 
 
-def test_environment(config):
-    # A focused hardware probe should work before the application is enabled.
-    bus_path = Path(f"/dev/i2c-{config.i2c_bus}")
-    if not bus_path.exists():
-        disabled = ""
-        try:
-            status = subprocess.run(
-                ["raspi-config", "nonint", "get_i2c"], capture_output=True,
-                text=True, timeout=10, check=False,
-            )
-            if status.stdout.strip() == "1":
-                disabled = " and raspi-config confirms header I2C is disabled"
-        except (FileNotFoundError, subprocess.TimeoutExpired):
-            pass
-        raise RuntimeError(
-            f"{bus_path} does not exist{disabled}. Enable it with "
-            "'sudo raspi-config nonint do_i2c 0' and reboot; only then can the "
-            "Pi test a BME280 wired to 3.3V, GND, physical pin 3 (SDA), and "
-            "physical pin 5 (SCL)"
-        )
-    sensor = BME280(config.i2c_bus, config.bme280_address)
-    try:
-        reading = sensor.read()
-    finally:
-        sensor.close()
-    print(f"PASS: real BME280 at 0x{sensor.address:02x}: {reading}")
-
-
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("component", choices=("camera", "pir", "environment"))
+    parser.add_argument("component", choices=("camera", "pir"))
     parser.add_argument("--env", help="Optional environment file")
     parser.add_argument("--output", type=Path, default=Path("/tmp/iot-camera-test.jpg"))
     parser.add_argument("--timeout", type=float, default=120)
@@ -133,10 +104,8 @@ def main():
         config = Config.load(args.env, local_only=True)
         if args.component == "camera":
             test_camera(config, args.output)
-        elif args.component == "pir":
-            test_pir(config, args.timeout)
         else:
-            test_environment(config)
+            test_pir(config, args.timeout)
     except (OSError, RuntimeError, TimeoutError, ValueError) as exc:
         parser.exit(1, f"Hardware test failed: {exc}\n")
     except KeyboardInterrupt:

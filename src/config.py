@@ -21,9 +21,6 @@ class Config:
     camera_backend: str
     webcam_index: int
     image_dir: Path
-    env_sensor_enabled: bool
-    i2c_bus: int
-    bme280_address: int | None
     inference_backend: str
     model_path: Path
     person_confidence_threshold: float
@@ -53,16 +50,6 @@ class Config:
             value = Path(get(name, default)).expanduser()
             return value if value.is_absolute() else ROOT / value
 
-        def boolean(name, default):
-            value = get(name, default).lower()
-            if value not in {"true", "false"}:
-                raise ValueError(f"{name} must be true or false")
-            return value == "true"
-
-        def i2c_address():
-            value = get("BME280_ADDRESS", "auto").lower()
-            return None if value == "auto" else int(value, 0)
-
         device_id = get("DEVICE_ID", "room-monitor-pi")
         config = cls(
             device_id=device_id,
@@ -74,9 +61,6 @@ class Config:
             camera_backend=get("CAMERA_BACKEND", "pi"),
             webcam_index=int(get("WEBCAM_INDEX", "0")),
             image_dir=path("IMAGE_DIR", "images"),
-            env_sensor_enabled=boolean("ENV_SENSOR_ENABLED", "false"),
-            i2c_bus=int(get("BME280_I2C_BUS", "1")),
-            bme280_address=i2c_address(),
             inference_backend=get("INFERENCE_BACKEND", "off"),
             model_path=path("MODEL_PATH", "models/object_detection_nanodet_2022nov.onnx"),
             person_confidence_threshold=float(get("PERSON_CONFIDENCE_THRESHOLD", "0.5")),
@@ -101,10 +85,6 @@ class Config:
             raise ValueError("Numeric settings must be finite")
         if config.warmup < 0 or config.cooldown < 0 or config.timeout <= 0:
             raise ValueError("Warmup/cooldown must be nonnegative; timeout must be positive")
-        if config.i2c_bus < 0:
-            raise ValueError("BME280_I2C_BUS must be nonnegative")
-        if config.bme280_address not in {None, 0x76, 0x77}:
-            raise ValueError("BME280_ADDRESS must be auto, 0x76 or 0x77")
         if config.camera_backend not in {"off", "pi", "webcam"}:
             raise ValueError("CAMERA_BACKEND must be off, pi or webcam")
         if config.inference_backend not in {"off", "nanodet"}:

@@ -1,4 +1,4 @@
-# GPIO Zero, lgpio, Picamera2, smbus2, numpy and Pillow come from Raspberry Pi OS apt.
+# GPIO Zero, lgpio, Picamera2, numpy and Pillow come from Raspberry Pi OS apt.
 # Create the venv with --system-site-packages; see README.
 -r requirements-aws.txt
 tinydb==4.9.0

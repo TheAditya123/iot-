@@ -9,7 +9,6 @@ import uuid
 from .camera import make_camera, save_jpeg_atomic
 from .config import Config
 from .database import EventStore
-from .environmental import make_environment
 from .inference import make_inference
 from .mqtt_client import MQTTPublisher, flush_outbox
 from .pir import open_pir
@@ -27,9 +26,6 @@ def run(config, count=0):
         pir = open_pir(config.gpio)
         stack.callback(pir.close)
         inference = make_inference(config)
-        environment = make_environment(config)
-        if environment:
-            stack.callback(environment.close)
         publisher = MQTTPublisher(config) if config.mqtt_enabled else None
         if publisher:
             stack.callback(publisher.close)
@@ -38,9 +34,9 @@ def run(config, count=0):
                 LOG.warning("AWS is not connected yet; motion events will remain in TinyDB for retry")
         LOG.info("PIR GPIO%d warming up for %.0f seconds", config.gpio, config.warmup)
         time.sleep(config.warmup)
-        LOG.info("Ready: real PIR on GPIO%d; camera=%s; model=%s; BME280=%s; AWS MQTT=%s",
+        LOG.info("Ready: real PIR on GPIO%d; camera=%s; model=%s; AWS MQTT=%s",
                  config.gpio, config.camera_backend, config.inference_backend,
-                 config.env_sensor_enabled, config.mqtt_enabled)
+                 config.mqtt_enabled)
         produced, next_flush, last_trigger = 0, 0.0, float("-inf")
         was_active = pir.motion_detected
         while count == 0 or produced < count:
@@ -76,12 +72,6 @@ def run(config, count=0):
                         except Exception as exc:
                             LOG.exception("Person detection failed; saving the camera event")
                             event["inference_error"] = str(exc)
-            if environment:
-                try:
-                    event.update(environment.read())
-                except Exception as exc:
-                    LOG.exception("BME280 read failed; saving the event without environmental values")
-                    event["environment_error"] = str(exc)
             store.add(event)  # Persist before any network operation.
             produced += 1
             LOG.info("Motion detected and saved: %s", event["event_id"])
