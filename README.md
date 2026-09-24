@@ -6,28 +6,13 @@ TinyDB, publishes JSON metadata to AWS IoT Core, and displays recent events on a
 local dashboard. Images stay on the Pi.
 
 ```mermaid
-flowchart TD
-    A[HC-SR501 watches for motion] -->|GPIO17 rising edge| B[Picamera2 captures one frame]
-    B --> C[Save JPEG locally<br/>images/event_id.jpg]
-    B --> D[Letterbox image to 416 x 416]
-    D --> E[Normalize pixels]
-    E --> F[NanoDet ONNX model<br/>OpenCV DNN on Pi CPU]
-    F --> G[Keep person detections<br/>above confidence threshold]
-    G --> H[Remove duplicate boxes with NMS]
-    H --> I[Count boxes and measure inference time]
-    C --> J[Build event metadata]
-    I --> J
-    J --> K[(TinyDB<br/>published = false)]
-    K --> L[Local dashboard]
-    K --> M{MQTT connected?}
-    M -->|Yes| N[Publish metadata to<br/>iot/room/events]
-    N --> O{QoS 1 acknowledged?}
-    O -->|Yes| P[Mark event published]
-    M -->|No| Q[Keep event pending]
-    O -->|No| Q
-    Q --> R[Retry after reconnect or restart]
-    R --> M
-    C -. JPEG stays on Pi .-> S[No cloud image upload]
+flowchart LR
+    A[PIR detects motion] --> B[Camera captures image]
+    B --> C[Pi counts people locally]
+    C --> D[TinyDB saves event]
+    D --> E[AWS IoT receives metadata]
+    D --> F[Dashboard shows status]
+    B --> G[Image stays on Pi]
 ```
 
 ## Current status
