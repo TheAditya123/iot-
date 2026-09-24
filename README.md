@@ -8,11 +8,13 @@ local dashboard. Images stay on the Pi.
 ```mermaid
 flowchart LR
     A[PIR detects motion] --> B[Camera captures image]
-    B --> C[Pi counts people locally]
-    C --> D[TinyDB saves event]
-    D --> E[AWS IoT receives metadata]
-    D --> F[Dashboard shows status]
-    B --> G[Image stays on Pi]
+    B --> C[OpenCV runs NanoDet locally]
+    C --> D[Model finds people in image]
+    D --> E[Pi creates people count]
+    E --> F[TinyDB saves event]
+    F --> G[AWS IoT receives metadata]
+    F --> H[Dashboard shows status]
+    B --> I[Image stays on Pi]
 ```
 
 ## Current status
@@ -70,11 +72,22 @@ replacement so incomplete writes do not replace the last valid file.
 
 ## Person detection
 
-NanoDet is a pretrained computer-vision model, not a language model. Its job is
-to locate objects in an image by predicting an object class, confidence score,
-and bounding box for each detection. The upstream model learned 80 COCO object
-classes; this project discards every class except `person` and counts the
-remaining person boxes.
+**High-level summary:** We chose a lightweight, pretrained NanoDet model and
+stored it locally on the Raspberry Pi. OpenCV runs the deep neural network and
+all of its calculations directly on the Pi's ARM CPU. The model examines the
+camera image, distinguishes people from other objects, and returns the person
+detections that the application counts. The image does not need to be sent to a
+cloud AI service.
+
+The model is stored as an **ONNX** file. ONNX, or Open Neural Network Exchange,
+is a standard format for saving a trained neural network so software such as
+OpenCV can run it without needing the original training framework. The ONNX
+file contains the model structure and learned weights used for inference.
+
+NanoDet is an object-detection model, not a language model. It predicts an
+object class, confidence score, and location box for each object it sees. The
+upstream model learned 80 COCO object classes; this project keeps only the
+`person` class and counts the remaining person boxes.
 
 | Item | Implementation |
 |---|---|
