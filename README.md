@@ -12,7 +12,7 @@ flowchart LR
     C --> D[Model finds people in image]
     D --> E[Pi creates people count]
     E --> F[TinyDB saves event]
-    F --> G[AWS IoT receives metadata]
+    F -->|Publish people_count over MQTT| G[AWS IoT topic<br/>iot/room/events]
     F --> H[Dashboard shows status]
     B --> I[Image stays on Pi]
 ```
@@ -123,22 +123,33 @@ limit, so running it only after PIR motion is a better fit for this project.
 .venv/bin/python scripts/inference_test.py /path/to/image.jpg
 ```
 
-## AWS IoT
+## MQTT and AWS IoT
 
-| Topic | Purpose |
-|---|---|
-| `iot/setup/test` | Connection, subscription, publish, and return-message test |
-| `iot/room/events` | Actual occupancy-event metadata |
+After each successful detection, the Pi publishes the result to the MQTT topic
+`iot/room/events`. The `people_count` field communicates whether a person was
+visible in the image:
 
-The Pi authenticates as AWS IoT Thing `room-monitor-pi` with an X.509 device
-certificate over MQTT/TLS port 8883. MQTT contains metadata, not the JPEG.
+| `people_count` | Meaning |
+|---:|---|
+| `0` | No person detected |
+| `1` or more | Person detected; the value is the number of visible people |
 
-```bash
-.venv/bin/python scripts/mqtt_test.py
-.venv/bin/python scripts/outbox_test.py
+Example MQTT message format (values are illustrative):
+
+```json
+{
+  "device_id": "room-monitor-pi",
+  "event_id": "8e4c...",
+  "timestamp": "2026-09-24T03:57:11.632Z",
+  "motion": true,
+  "people_count": 1,
+  "person_confidences": [0.82],
+  "inference_ms": 120.4
+}
 ```
 
-See [docs/aws-setup.md](docs/aws-setup.md) for provisioning details.
+Only this lightweight metadata is published. The JPEG remains on the Pi. If
+MQTT is unavailable, TinyDB keeps the event and the Pi retries it later.
 
 ## Run the project
 
