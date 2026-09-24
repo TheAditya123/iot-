@@ -10,17 +10,54 @@ import urllib.request
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def write_json(path, value):
+def write_private_atomic(path, content):
     temporary = path.with_suffix(path.suffix + ".tmp")
-    temporary.write_text(json.dumps(value, indent=2) + "\n", encoding="utf-8")
-    temporary.replace(path)
+    descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    try:
+        os.fchmod(descriptor, 0o600)
+        with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as stream:
+            descriptor = -1
+            stream.write(content)
+            stream.flush()
+            os.fsync(stream.fileno())
+        temporary.replace(path)
+        path.chmod(0o600)
+        directory = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(directory)
+        finally:
+            os.close(directory)
+    except BaseException:
+        if descriptor >= 0:
+            os.close(descriptor)
+        temporary.unlink(missing_ok=True)
+        raise
+
+
+def write_json(path, value):
+    write_private_atomic(path, json.dumps(value, indent=2) + "\n")
 
 
 def secret_file(path, content):
     # Exclusive create avoids overwriting an existing device identity.
     descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-    with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as stream:
-        stream.write(content)
+    try:
+        os.fchmod(descriptor, 0o600)
+        with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as stream:
+            descriptor = -1
+            stream.write(content)
+            stream.flush()
+            os.fsync(stream.fileno())
+        directory = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(directory)
+        finally:
+            os.close(directory)
+    except BaseException:
+        if descriptor >= 0:
+            os.close(descriptor)
+        path.unlink(missing_ok=True)
+        raise
 
 
 def device_policy(partition, region, account, thing, topics):
@@ -103,7 +140,7 @@ def apply(args):
            f"MQTT_TOPIC={args.event_topic}\n"
            "MQTT_CA_CERT=certs/AmazonRootCA1.pem\nMQTT_CLIENT_CERT=certs/device.cert.pem\n"
            "MQTT_PRIVATE_KEY=certs/device.private.key\n")
-    (ROOT / ".env.aws").write_text(env, encoding="utf-8")
+    write_private_atomic(ROOT / ".env.aws", env)
     print(f"Ready in account {account}, region {args.region}. Credentials saved locally; no private key printed.")
     print("Next: python scripts/mqtt_test.py (verifies publish and receive through AWS IoT).")
 

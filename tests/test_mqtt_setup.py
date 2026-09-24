@@ -47,6 +47,23 @@ class FakeClient:
 
 
 class MqttSetupTests(unittest.TestCase):
+    def test_private_file_writes_survive_sync_failure_without_partial_secrets(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            config = root / ".env.aws"
+            aws_bootstrap.write_private_atomic(config, "original\n")
+            with patch.object(
+                aws_bootstrap.os, "fsync", side_effect=OSError("disk sync failed")
+            ):
+                with self.assertRaisesRegex(OSError, "disk sync failed"):
+                    aws_bootstrap.write_private_atomic(config, "replacement\n")
+                key = root / "device.private.key"
+                with self.assertRaisesRegex(OSError, "disk sync failed"):
+                    aws_bootstrap.secret_file(key, "partial secret")
+            self.assertEqual(config.read_text(encoding="utf-8"), "original\n")
+            self.assertFalse(config.with_suffix(".aws.tmp").exists())
+            self.assertFalse(key.exists())
+
     def test_device_permissions_use_exact_topic_and_topicfilter(self):
         policy = aws_bootstrap.device_policy(
             "aws", "us-east-1", "123456789012", "pi",
@@ -155,6 +172,9 @@ class MqttSetupTests(unittest.TestCase):
             self.assertNotIn("FAKE KEY", config)
             state = json.loads((root / "certs/aws-bootstrap-state.json").read_text(encoding="utf-8"))
             self.assertTrue(state["complete"])
+            self.assertEqual((root / ".env.aws").stat().st_mode & 0o777, 0o600)
+            self.assertEqual((root / "certs/aws-bootstrap-state.json").stat().st_mode & 0o777, 0o600)
+            self.assertEqual((root / "certs/device.private.key").stat().st_mode & 0o777, 0o600)
 
 
 if __name__ == "__main__":

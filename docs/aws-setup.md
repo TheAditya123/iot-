@@ -9,6 +9,18 @@ before running the real PIR → TinyDB → AWS application. The test script uses
 Use your own or your lab's AWS account and choose one region. These examples use
 `us-east-1`; use your chosen region consistently.
 
+AWS CLI v2 can create a temporary local profile from an existing console
+session. On a headless Pi, use the remote flow, open the printed URL in a
+browser, and paste the one-time authorization response back into the CLI:
+
+```bash
+aws login --remote --profile iot-dev --region us-east-1
+aws sts get-caller-identity --profile iot-dev
+```
+
+The `awscrt` dependency required by this login provider is pinned in
+`requirements-aws.txt`, so install that file before running the bootstrap.
+
 If your organization uses IAM Identity Center, install
 [AWS CLI v2](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html)
 and sign in:
@@ -22,8 +34,9 @@ aws sts get-caller-identity --profile iot-dev
 If your account instead provides an IAM access-key profile, configure it locally
 with `aws configure --profile iot-dev`. Do not paste credentials into chat or
 commit them. For already-configured default credentials, omit `--profile iot-dev`
-from the bootstrap commands. A browser console login alone does not authenticate
-the Python bootstrap.
+from the bootstrap commands. A normal browser console tab alone does not
+authenticate the Python bootstrap; use `aws login`, SSO, or a configured
+access-key profile.
 
 The setup identity needs `sts:GetCallerIdentity` and these IoT operations:
 `iot:CreateThing`, `iot:GetPolicy`, `iot:CreatePolicy`,

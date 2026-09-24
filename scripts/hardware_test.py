@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
+import subprocess
 import sys
 import time
 
@@ -10,19 +11,36 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from src.camera import make_camera
+from src.camera import make_camera, save_jpeg_atomic
 from src.config import Config
-from src.environmental import make_environment
+from src.environmental import BME280
 from src.pir import open_pir
 
 
 def test_camera(config, output):
+    if config.camera_backend == "pi":
+        try:
+            probe = subprocess.run(
+                ["rpicam-hello", "--list-cameras"], capture_output=True,
+                text=True, timeout=15, check=False,
+            )
+        except FileNotFoundError as exc:
+            raise RuntimeError(
+                "rpicam-hello is missing; install the Raspberry Pi camera apps"
+            ) from exc
+        probe_output = (probe.stdout + probe.stderr).strip()
+        if probe.returncode != 0 or "No cameras available" in probe_output:
+            raise RuntimeError(
+                "Raspberry Pi OS found zero CSI camera sensors. The camera stack is installed, "
+                "but no sensor answered during kernel/libcamera probing; power off and check the "
+                "ribbon orientation, both latches, the Pi 5 22-pin cable, and the other CAM/DISP port"
+            )
     camera = make_camera(config)
     if camera is None:
         raise RuntimeError("CAMERA_BACKEND is off")
     try:
         image = camera.capture()
-        image.save(output, "JPEG")
+        save_jpeg_atomic(image, output)
     finally:
         camera.close()
     if output.stat().st_size == 0:
@@ -38,23 +56,65 @@ def test_pir(config, timeout):
         print("Waiting for the PIR to become inactive and then detect a rising edge...")
         deadline, was_active = time.monotonic() + timeout, pir.motion_detected
         saw_inactive = not was_active
+        high_samples = int(was_active)
+        low_samples = int(not was_active)
+        transitions = 0
         while time.monotonic() < deadline:
             active = pir.motion_detected
+            high_samples += int(active)
+            low_samples += int(not active)
+            transitions += int(active != was_active)
             saw_inactive = saw_inactive or not active
             if saw_inactive and active and not was_active:
-                print(f"PASS: real PIR rising edge detected on GPIO{config.gpio}")
+                print(
+                    f"PASS: real PIR rising edge detected on GPIO{config.gpio} "
+                    f"({transitions} transition(s) observed)"
+                )
                 return
             was_active = active
             time.sleep(0.05)
-        raise TimeoutError(f"No real PIR rising edge within {timeout:.0f} seconds")
+        if high_samples == 0:
+            detail = (
+                "GPIO stayed LOW for the entire test: no HIGH signal reached the Pi. "
+                "Verify HC-SR501 VCC to physical pin 2, GND to pin 6, OUT to physical "
+                "pin 11 (BCM17), then increase sensitivity and walk across its view"
+            )
+        elif low_samples == 0:
+            detail = (
+                "GPIO stayed HIGH for the entire test: let the PIR settle, reduce its "
+                "delay, select non-retrigger mode, and move out of its view before retrying"
+            )
+        else:
+            detail = (
+                f"GPIO changed {transitions} time(s), but no inactive-to-active "
+                "edge was accepted"
+            )
+        raise TimeoutError(f"No real PIR rising edge within {timeout:.0f} seconds. {detail}")
     finally:
         pir.close()
 
 
 def test_environment(config):
-    sensor = make_environment(config)
-    if sensor is None:
-        raise RuntimeError("ENV_SENSOR_ENABLED is false")
+    # A focused hardware probe should work before the application is enabled.
+    bus_path = Path(f"/dev/i2c-{config.i2c_bus}")
+    if not bus_path.exists():
+        disabled = ""
+        try:
+            status = subprocess.run(
+                ["raspi-config", "nonint", "get_i2c"], capture_output=True,
+                text=True, timeout=10, check=False,
+            )
+            if status.stdout.strip() == "1":
+                disabled = " and raspi-config confirms header I2C is disabled"
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            pass
+        raise RuntimeError(
+            f"{bus_path} does not exist{disabled}. Enable it with "
+            "'sudo raspi-config nonint do_i2c 0' and reboot; only then can the "
+            "Pi test a BME280 wired to 3.3V, GND, physical pin 3 (SDA), and "
+            "physical pin 5 (SCL)"
+        )
+    sensor = BME280(config.i2c_bus, config.bme280_address)
     try:
         reading = sensor.read()
     finally:

@@ -6,7 +6,7 @@ import logging
 import time
 import uuid
 
-from .camera import make_camera
+from .camera import make_camera, save_jpeg_atomic
 from .config import Config
 from .database import EventStore
 from .environmental import make_environment
@@ -62,9 +62,8 @@ def run(config, count=0):
             if camera:
                 try:
                     image = camera.capture()
-                    config.image_dir.mkdir(parents=True, exist_ok=True)
                     image_path = config.image_dir / f"{event['event_id']}.jpg"
-                    image.save(image_path, "JPEG")
+                    save_jpeg_atomic(image, image_path)
                     event["image_path"] = str(image_path)
                     LOG.info("Camera image saved: %s", image_path)
                 except Exception as exc:

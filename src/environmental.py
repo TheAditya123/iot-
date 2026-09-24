@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import logging
+import math
+from pathlib import Path
 import time
 
 LOG = logging.getLogger(__name__)
@@ -20,10 +22,23 @@ class BME280:
     def __init__(self, bus_number: int = 1, address: int | None = None):
         try:
             from smbus2 import SMBus
-            self.bus = SMBus(bus_number)
-        except (ImportError, OSError) as exc:
+        except ImportError as exc:
             raise RuntimeError(
-                f"Cannot open I2C bus {bus_number}; enable I2C and check /dev/i2c-{bus_number}"
+                "smbus2 is unavailable; install the Raspberry Pi OS I2C Python package"
+            ) from exc
+        try:
+            self.bus = SMBus(bus_number)
+        except OSError as exc:
+            bus_path = Path(f"/dev/i2c-{bus_number}")
+            if not bus_path.exists():
+                detail = (
+                    f"{bus_path} does not exist, so header I2C is not enabled; run "
+                    "'sudo raspi-config nonint do_i2c 0' and reboot"
+                )
+            else:
+                detail = f"Cannot open {bus_path}; check its permissions and kernel log"
+            raise RuntimeError(
+                detail
             ) from exc
 
         try:
@@ -115,6 +130,9 @@ class BME280:
                * (1.0 + c["H3"] / 67108864.0 * humidity))
         )
         humidity *= 1.0 - c["H1"] * humidity / 524288.0
+
+        if not all(math.isfinite(value) for value in (temperature, humidity, pressure)):
+            raise RuntimeError("BME280 compensation produced a non-finite reading")
 
         return {
             "temperature_c": round(temperature, 2),

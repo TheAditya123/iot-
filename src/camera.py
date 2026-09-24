@@ -1,9 +1,31 @@
-"""Real Pi Camera Module 3 and optional USB webcam adapters."""
+"""Real Raspberry Pi CSI camera and optional USB webcam adapters."""
 import logging
+import os
+from pathlib import Path
 import time
 from PIL import Image
 
 LOG = logging.getLogger(__name__)
+
+
+def save_jpeg_atomic(image: Image.Image, path: Path) -> None:
+    """Durably replace a JPEG without exposing a partial capture."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    try:
+        image.save(temporary, "JPEG")
+        with temporary.open("rb") as stream:
+            os.fsync(stream.fileno())
+        temporary.replace(path)
+        path.chmod(0o600)
+        directory = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(directory)
+        finally:
+            os.close(directory)
+    except BaseException:
+        temporary.unlink(missing_ok=True)
+        raise
 
 
 class WebcamCamera:
@@ -49,8 +71,19 @@ class PiCamera:
         except Exception as exc:
             if self.camera is not None:
                 self.camera.close()
+            if "No camera number" in str(exc):
+                detail = (
+                    "Raspberry Pi OS found zero CSI camera sensors; the camera stack is "
+                    "installed, so power off and check the ribbon orientation, both "
+                    "latches, the Pi 5 22-pin cable, and the other CAM/DISP port"
+                )
+            else:
+                detail = (
+                    "Picamera2 initialization failed; inspect the underlying exception "
+                    "and rpicam-hello --list-cameras"
+                )
             raise RuntimeError(
-                "No usable Pi camera detected; check rpicam-hello --list-cameras and reseat the ribbon"
+                detail
             ) from exc
 
     def capture(self):

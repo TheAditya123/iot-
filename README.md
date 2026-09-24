@@ -88,6 +88,15 @@ lgpio, smbus2, NumPy, and Pillow. Project packages remain inside `.venv`.
 The model downloader obtains the 3.8 MB OpenCV Zoo NanoDet model and verifies
 its SHA-256 hash before placing it under `models/`. The model is ignored by Git.
 
+Run the same detector used by the event loop against any real JPEG or PNG:
+
+```bash
+.venv/bin/python scripts/inference_test.py /path/to/image.jpg
+```
+
+The command prints the image and model SHA-256 values, measured inference time,
+real person count, and confidence values. It does not insert a simulated event.
+
 ## Configuration
 
 Hardware and local settings live in ignored `.env`. AWS identity and TLS paths
@@ -241,7 +250,9 @@ TinyDB stores wrappers with `event` and `published` fields in
 `data/events.json`. `src.main` writes locally before any network operation. If
 AWS is disconnected or rejects a publish, the record remains unpublished and
 is retried in order. Images are never put in MQTT payloads; only their local path
-is metadata.
+is metadata. TinyDB writes and JPEG saves use temporary files plus atomic
+replacement, and the database uses a file lock so dashboard reads cannot see a
+partially written event file.
 
 ## AWS IoT Core
 
@@ -256,16 +267,30 @@ There are two exact topics:
 See [docs/aws-setup.md](docs/aws-setup.md) for provisioning. When `.env.aws` and
 the three TLS files exist, run:
 
+The bootstrap saves the private key, certificate, state, and `.env.aws` with
+mode `0600`. State/config writes are synced and atomically replaced; exclusive
+key/certificate creation plus validation makes an interrupted setup fail closed
+instead of silently reusing incomplete files.
+
 ```bash
 .venv/bin/python scripts/mqtt_test.py
+.venv/bin/python scripts/outbox_test.py
 .venv/bin/python -m src.main --count 1
 ```
 
 The first command must receive the exact unique message it published. The
-second uses the real PIR/camera/sensor pipeline and publishes pending events to
-`MQTT_TOPIC`. DynamoDB is intentionally outside this milestone. If required
+second creates a temporary, clearly labelled non-sensor record and proves the
+production TinyDB outbox is marked published only after AWS acknowledges it.
+The third uses the real PIR/camera/sensor pipeline and publishes pending events
+to `MQTT_TOPIC`. DynamoDB is intentionally outside this milestone. If required
 later, route MQTT events with an AWS IoT Rule instead of placing database
 credentials on the Pi.
+
+On a Pi without an existing AWS profile, AWS CLI v2 can authenticate from a
+browser session with `aws login --remote --profile iot-dev --region us-east-1`.
+Install `requirements-aws.txt` first because that login provider requires the
+pinned AWS CRT package. Never paste the resulting temporary authorization or
+AWS credentials into documentation or Git.
 
 ## Local dashboard
 
@@ -293,16 +318,21 @@ curl http://127.0.0.1:5000/api/status
 .venv/bin/python scripts/aws_bootstrap.py --region us-east-1
 ```
 
-These checks do not fake a successful hardware or AWS result. Unit-test fakes
-verify compensation, configuration, MQTT acknowledgements, persistent retry,
-detector preprocessing, and dashboard output. Use `scripts/hardware_test.py` and
-`scripts/mqtt_test.py` for real-device verification.
+These checks do not fake a successful hardware or AWS result. Fakes exist only
+inside unit tests, where they verify full event assembly, hardware-error
+preservation, compensation, MQTT acknowledgements, persistent retry, detector
+preprocessing, and dashboard output. Use `scripts/hardware_test.py`,
+`scripts/inference_test.py`, and `scripts/mqtt_test.py` for real-device checks.
 
 ## Troubleshooting
 
+- See [the dated Pi bring-up report](docs/pi-bringup-status.md) for the observed
+  device evidence behind the current camera, PIR, and I2C conclusions.
 - **No cameras available:** shut down, disconnect power, and reseat both ribbon
   ends with the contacts facing the connector contacts. Confirm the Pi 5 cable
-  and try the other CAM/DISP connector.
+  and try the other CAM/DISP connector. If `camera_auto_detect=1` loads no sensor
+  overlay for an official module, the problem is in the physical camera path.
+  Use a manual overlay only after identifying a third-party sensor.
 - **PIR never changes:** verify 5V, ground, and OUT to physical pin 11; allow the
   warm-up; reduce the module delay; confirm `pinctrl get 17` shows an input.
 - **No `/dev/i2c-1`:** enable I2C with `raspi-config` and reboot.
@@ -342,8 +372,10 @@ src/database.py        TinyDB and persistent MQTT outbox
 src/mqtt_client.py     AWS MQTT/TLS publisher
 src/dashboard.py       local Flask dashboard and JSON API
 scripts/hardware_test.py
+scripts/inference_test.py
 scripts/download_model.py
 scripts/mqtt_test.py
+scripts/outbox_test.py
 scripts/aws_bootstrap.py
 ```
 
