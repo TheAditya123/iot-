@@ -5,10 +5,29 @@ motion occurs. The Pi then runs local person detection, saves the event in
 TinyDB, publishes JSON metadata to AWS IoT Core, and displays recent events on a
 local dashboard. Images stay on the Pi.
 
-```text
-PIR motion -> camera JPEG -> local person count -> TinyDB -> AWS MQTT
-                                                   |
-                                                   +-> dashboard
+```mermaid
+flowchart TD
+    A[HC-SR501 watches for motion] -->|GPIO17 rising edge| B[Picamera2 captures one frame]
+    B --> C[Save JPEG locally<br/>images/event_id.jpg]
+    B --> D[Letterbox image to 416 x 416]
+    D --> E[Normalize pixels]
+    E --> F[NanoDet ONNX model<br/>OpenCV DNN on Pi CPU]
+    F --> G[Keep person detections<br/>above confidence threshold]
+    G --> H[Remove duplicate boxes with NMS]
+    H --> I[Count boxes and measure inference time]
+    C --> J[Build event metadata]
+    I --> J
+    J --> K[(TinyDB<br/>published = false)]
+    K --> L[Local dashboard]
+    K --> M{MQTT connected?}
+    M -->|Yes| N[Publish metadata to<br/>iot/room/events]
+    N --> O{QoS 1 acknowledged?}
+    O -->|Yes| P[Mark event published]
+    M -->|No| Q[Keep event pending]
+    O -->|No| Q
+    Q --> R[Retry after reconnect or restart]
+    R --> M
+    C -. JPEG stays on Pi .-> S[No cloud image upload]
 ```
 
 ## Current status
@@ -27,18 +46,6 @@ PIR motion -> camera JPEG -> local person count -> TinyDB -> AWS MQTT
 The software and AWS paths are ready. A complete real room event still depends
 on correcting the camera connection and PIR signal. Detailed hardware evidence
 is in [docs/pi-bringup-status.md](docs/pi-bringup-status.md).
-
-## Event flow
-
-| Step | Action |
-|---:|---|
-| 1 | Wait for a LOW-to-HIGH transition from the PIR on BCM GPIO17 |
-| 2 | Capture one JPEG with Picamera2 |
-| 3 | Run local NanoDet inference and count detected people |
-| 4 | Write the event to TinyDB before using the network |
-| 5 | Publish event metadata to `iot/room/events` |
-| 6 | Mark the row published after the MQTT QoS 1 acknowledgement |
-| 7 | Retry unpublished rows after reconnecting or restarting |
 
 Production mode uses real hardware data only. It does not create simulated
 motion, images, or person counts.
@@ -78,19 +85,40 @@ replacement so incomplete writes do not replace the last valid file.
 
 ## Person detection
 
+NanoDet is a pretrained computer-vision model, not a language model. Its job is
+to locate objects in an image by predicting an object class, confidence score,
+and bounding box for each detection. The upstream model learned 80 COCO object
+classes; this project discards every class except `person` and counts the
+remaining person boxes.
+
 | Item | Implementation |
 |---|---|
 | Model | NanoDet-m-plus-1.5x from [OpenCV Zoo](https://github.com/opencv/opencv_zoo/tree/main/models/object_detection_nanodet) |
 | Training | Pretrained upstream on COCO; this project does not train new weights |
+| Architecture | Lightweight one-stage, anchor-free object detector |
 | Input | One camera image, letterboxed to 416 x 416 |
 | Runtime | OpenCV DNN on the Raspberry Pi CPU |
 | Filter | COCO `person` class above `PERSON_CONFIDENCE_THRESHOLD` |
 | Output | Person count, confidence values, inference time, and backend name |
 | Model size | About 3.8 MB; downloaded separately and SHA-256 verified |
 
-The detector performs object detection, not face recognition. It averaged about
-119.7 ms during a 500-call Pi test. Continuous inference reached the Pi's
-thermal limit, which supports PIR-triggered inference.
+NanoDet was chosen because its small ONNX file runs through OpenCV DNN directly
+on the Pi's ARM CPU. It avoids a large PyTorch installation, an AI accelerator,
+and cloud image processing. This keeps installation, inference, and the privacy
+story simple while still providing object detection rather than basic whole-
+image classification.
+
+For each image, OpenCV preserves the aspect ratio while fitting it into a
+416 x 416 canvas, normalizes the pixels, and runs the ONNX network. The network
+returns class scores and bounding-box distances at four image scales. The code
+decodes those values, keeps COCO class 0 (`person`) above the configured
+threshold, and applies non-maximum suppression so overlapping predictions of
+the same person are counted once. The number of remaining boxes becomes
+`people_count`; their scores and total processing time are stored with it.
+
+The detector does not identify faces or people. It averaged about 119.7 ms per
+image during a 500-call Pi test. Continuous inference reached the Pi's thermal
+limit, so running it only after PIR motion is a better fit for this project.
 
 ```bash
 .venv/bin/python scripts/download_model.py
