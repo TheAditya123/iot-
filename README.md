@@ -26,12 +26,12 @@ flowchart LR
 | TinyDB and MQTT outbox | Working | Events survive connection failure and restart; storage stress test retained every event |
 | AWS IoT Core | Working | TLS connects; 12/12 QoS 1 soak messages were acknowledged |
 | Dashboard | Working | HTML and JSON endpoints respond on port 5000 |
-| CSI camera | Needs physical correction | `rpicam-hello --list-cameras` reports `No cameras available!` |
-| HC-SR501 PIR | Needs physical correction | GPIO17 works, but no HIGH signal reached it during motion tests |
+| CSI camera | Hardware fault remains | The correct IMX708 driver loads on CAM/DISP1, but the sensor and autofocus controller do not answer over I2C |
+| HC-SR501 PIR | Working | A real motion test produced a rising edge on BCM GPIO17 |
 | Automated tests | Passing | 21/21 tests pass |
 
-The software and AWS paths are ready. A complete real room event still depends
-on correcting the camera connection and PIR signal. Detailed hardware evidence
+The software, PIR, and AWS paths are ready. A complete real room event still
+depends on restoring camera communication. Detailed hardware evidence
 is in [docs/pi-bringup-status.md](docs/pi-bringup-status.md).
 
 Production mode uses real hardware data only. It does not create simulated
@@ -207,11 +207,10 @@ Set `INFERENCE_BACKEND=nanodet` in `.env`, then use:
 
 | Priority | Task | Completion check |
 |---:|---|---|
-| 1 | Correct the CSI camera connection | Camera enumerates and saves a nonempty JPEG |
-| 2 | Correct the PIR power/signal connection | GPIO17 records a real rising edge |
-| 3 | Run one complete physical event | PIR -> JPEG -> count -> TinyDB -> AWS -> dashboard |
-| 4 | Test real room scenes | Record useful counts and choose a confidence threshold |
-| 5 | Compare triggered and continuous inference | Record inference count, latency, CPU use, and temperature |
+| 1 | Replace/test the CSI ribbon cable, then the camera board if needed | Camera enumerates and saves a nonempty JPEG |
+| 2 | Run one complete physical event | PIR -> JPEG -> count -> TinyDB -> AWS -> dashboard |
+| 3 | Test real room scenes | Record useful counts and choose a confidence threshold |
+| 4 | Compare triggered and continuous inference | Record inference count, latency, CPU use, and temperature |
 
 ## Files kept out of Git
 

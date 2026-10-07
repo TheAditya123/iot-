@@ -1,4 +1,4 @@
-# Raspberry Pi 5 bring-up status — 2026-09-23
+# Raspberry Pi 5 bring-up status — 2026-10-07
 
 This report records observed results from the real target Pi. It distinguishes
 verified software from hardware paths that still require a physical correction.
@@ -71,55 +71,40 @@ No simulated sensor values were inserted into the production database.
 
 Observed evidence:
 
-- `rpicam-hello --list-cameras` reports `No cameras available!`.
-- `rpicam-still` reaches libcamera normally, then reports zero cameras.
-- The kernel log contains the Pi ISP but no `imx*` or `ov*` sensor probe.
-- No sensor capture node exists; `/dev/video19` is the HEVC decoder and
-  `/dev/video20` through `/dev/video35` are ISP processing nodes.
-- `camera_auto_detect=1` is present, but no camera device-tree overlay loaded.
-- Both camera regulator GPIOs were observed low, consistent with no sensor being
-  identified and powered by the camera subsystem.
-- No USB webcam is attached as an alternate real camera.
+- The module is a Raspberry Pi Camera Module 3 Standard, part SC0872, using the
+  Sony IMX708 sensor.
+- Both CAM/DISP connectors and the standard sensor overlays were tested. The
+  current setup uses CAM/DISP1 with the correct `dtoverlay=imx708` setting.
+- The kernel creates the CAM/DISP1 IMX708 path and loads the correct driver, so
+  the selected port, overlay, and Linux camera support are confirmed.
+- The IMX708 at address `0x1a` fails its chip-ID read with error `-5`.
+- The module's DW9807 autofocus controller at address `0x0c` fails I2C writes
+  with error `-121`.
+- `rpicam-hello --list-cameras` therefore still reports `No cameras available!`.
 - A production `src.main --local-only --count 1` run exited nonzero at camera
   initialization and left both `data/events.json` and `images/` empty; it did
   not manufacture a capture or event.
 
-This rules out Python, Picamera2 installation, and missing camera applications.
-For an official Raspberry Pi OV5647, IMX219, IMX708, IMX477, IMX500, or IMX296
-module, Raspberry Pi OS auto-detection should load the driver. The evidence
-therefore points to an open/reversed ribbon, an unlocked connector, the wrong
-15-to-22-pin cable, a damaged module/cable, or a third-party sensor that needs
-its documented manual overlay. Identify the sensor before adding an overlay.
+This rules out Python, Picamera2, libcamera, the selected port, and the sensor
+model setting. Both chips on the same camera board fail to communicate, so the
+remaining shared failure point is the 15-to-22-pin ribbon cable or the camera
+board. The next check is a known-good Raspberry Pi Standard-to-Mini camera
+cable. If the same errors remain with that cable, replace/test the SC0872 board.
 
-Required physical correction: power the Pi off, reseat both ribbon ends with
-their contacts facing the connector contacts, close both latches, verify the Pi
-5 22-pin end, and try the other CAM/DISP connector. Then rerun
-`rpicam-hello --list-cameras` and capture a nonempty JPEG.
-
-## PIR: why it is not working yet
+## PIR: working
 
 Observed evidence:
 
 - GPIO17 exists, is unclaimed, and the user has GPIO permissions.
-- After the sensor had several minutes to stabilize, GPIO17 stayed LOW for every
-  sample during separate two-minute and five-minute real transition tests.
-- A safe internal-pull self-test made GPIO17 read HIGH with pull-up and LOW with
-  pull-down.
+- The GPIO pull-up/pull-down self-test passed.
+- After the physical connection was corrected and the PIR warmed up, a real
+  motion test produced a rising edge on BCM GPIO17.
 
-The self-test proves the Pi input and GPIO software work. The motion test proves
-that no HIGH signal reaches physical pin 11. Because the weak pull-up could pull
-the line HIGH, the input also appears to be floating rather than held LOW by an
-actively connected HC-SR501 output. The likely causes are missing sensor power,
-OUT on the wrong header pin, ground not shared, a loose jumper, or a faulty PIR.
-
-Required physical correction: verify the labels on the module itself, then wire
-VCC to physical pin 2, GND to physical pin 6, and OUT to physical pin 11. Raise
-sensitivity, allow warmup, and walk across the sensor view while rerunning
-`scripts/hardware_test.py pir`.
+The HC-SR501 trigger path is therefore ready for the full application.
 
 ## Completion gate
 
-After the camera and PIR paths are corrected, one real PIR edge must produce a
-real JPEG, a measured person count and latency, an atomic TinyDB row, an AWS
-acknowledgment, and visible dashboard data. The software is configured for that
-sequence and does not fall back to fake values.
+After camera communication is restored, one real PIR edge must produce a real
+JPEG, a measured person count and latency, an atomic TinyDB row, an AWS
+acknowledgment, and visible dashboard data. The PIR, software, AWS connection,
+and dashboard are ready for that sequence and do not fall back to fake values.
