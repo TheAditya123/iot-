@@ -10,7 +10,7 @@ flowchart LR
     A[PIR detects motion] --> B[Camera captures image]
     B --> C[OpenCV runs NanoDet locally]
     C --> D[Model finds people in image]
-    D --> E[Pi creates people count]
+    D --> E[Pi creates count + one-sentence summary]
     E --> F[TinyDB saves event]
     F -->|Publish people_count over MQTT| G[AWS IoT topic<br/>iot/room/events]
     F --> H[Dashboard shows status]
@@ -26,13 +26,13 @@ flowchart LR
 | TinyDB and MQTT outbox | Working | Events survive connection failure and restart; storage stress test retained every event |
 | AWS IoT Core | Working | TLS connects; 12/12 QoS 1 soak messages were acknowledged |
 | Dashboard | Working | HTML and JSON endpoints respond on port 5000 |
-| CSI camera | Camera module likely faulty | The correct IMX708 driver loads, but fresh probes fail with two cables and both Pi camera ports |
+| CSI camera | Working | Camera Module 3 enumerates on CAM/DISP1 and saves real 1280 x 960 JPEGs |
 | HC-SR501 PIR | Working | A real motion test produced a rising edge on BCM GPIO17 |
-| Automated tests | Passing | 22/22 tests pass |
+| Full physical pipeline | Working | Real motion produced a JPEG, `people_count: 1`, TinyDB row, and AWS acknowledgment |
+| Automated tests | Passing | 23/23 tests pass |
 
-The software, PIR, and AWS paths are ready. A complete real room event still
-depends on restoring camera communication. Detailed hardware evidence
-is in [docs/pi-bringup-status.md](docs/pi-bringup-status.md).
+The complete PIR-to-AWS path has passed with real hardware and a real person.
+Detailed evidence is in [docs/pi-bringup-status.md](docs/pi-bringup-status.md).
 
 Production mode uses real hardware data only. It does not create simulated
 motion, images, or person counts.
@@ -61,7 +61,8 @@ uploaded through MQTT.
     "people_count": 1,
     "person_confidences": [0.82],
     "inference_ms": 120.4,
-    "inference_backend": "nanodet"
+    "inference_backend": "nanodet",
+    "summary": "Motion was detected and one person was detected in the camera image."
   },
   "published": false
 }
@@ -118,6 +119,12 @@ The detector does not identify faces or people. It averaged about 119.7 ms per
 image during a 500-call Pi test. Continuous inference reached the Pi's thermal
 limit, so running it only after PIR motion is a better fit for this project.
 
+After detection, `src/summary.py` converts the measured count into one short
+sentence. For example, `people_count: 1` becomes “Motion was detected and one
+person was detected in the camera image.” This is intentionally based on the
+real NanoDet result instead of adding a large vision-language model, so it adds
+almost no delay and cannot invent objects the detector did not report.
+
 ```bash
 .venv/bin/python scripts/download_model.py
 .venv/bin/python scripts/inference_test.py /path/to/image.jpg
@@ -144,7 +151,8 @@ Example MQTT message format (values are illustrative):
   "motion": true,
   "people_count": 1,
   "person_confidences": [0.82],
-  "inference_ms": 120.4
+  "inference_ms": 120.4,
+  "summary": "Motion was detected and one person was detected in the camera image."
 }
 ```
 
@@ -191,6 +199,7 @@ Set `INFERENCE_BACKEND=nanodet` in `.env`, then use:
 | `src/pir.py` | Real HC-SR501 input on BCM GPIO17 |
 | `src/camera.py` | Picamera2 capture and atomic JPEG saving |
 | `src/inference.py` | NanoDet person detection and timing |
+| `src/summary.py` | One-sentence description of the measured occupancy result |
 | `src/database.py` | TinyDB history and durable MQTT outbox |
 | `src/mqtt_client.py` | AWS IoT TLS connection and QoS 1 publishing |
 | `src/dashboard.py` | Local status page and JSON API |
@@ -207,10 +216,9 @@ Set `INFERENCE_BACKEND=nanodet` in `.env`, then use:
 
 | Priority | Task | Completion check |
 |---:|---|---|
-| 1 | Replace/test the SC0872 camera module | Camera enumerates and saves a nonempty JPEG |
-| 2 | Run one complete physical event | PIR -> JPEG -> count -> TinyDB -> AWS -> dashboard |
-| 3 | Test real room scenes | Record useful counts and choose a confidence threshold |
-| 4 | Compare triggered and continuous inference | Record inference count, latency, CPU use, and temperature |
+| 1 | Test more real room scenes | Record useful counts and tune the confidence threshold if needed |
+| 2 | Compare triggered and continuous inference | Record inference count, latency, CPU use, and temperature |
+| 3 | Add automatic startup if needed | Enable services only after the final demo setup is stable |
 
 ## Files kept out of Git
 

@@ -20,7 +20,7 @@ No simulated sensor values were inserted into the production database.
   throttling (`get_throttled=0x0`).
 - The Python environment imports GPIO Zero, lgpio, Picamera2, TinyDB,
   OpenCV, Flask, Paho MQTT, boto3, and AWS CRT.
-- All 22 offline tests pass, including full local event assembly, preservation
+- All 23 offline tests pass, including full local event assembly, preservation
   of partial hardware-failure events, MQTT acknowledgments,
   exact-topic IoT policy generation, atomic TinyDB/JPEG/private-file recovery,
   dashboard data, and persistent outbox retry.
@@ -67,33 +67,21 @@ No simulated sensor values were inserted into the production database.
 - Temporary AWS administrator login credentials were logged out after device
   provisioning. MQTT continues to work with the scoped device certificate.
 
-## Camera: why it is not working yet
+## Camera: working
 
 Observed evidence:
 
-- The module is a Raspberry Pi Camera Module 3 Standard, part SC0872, using the
-  Sony IMX708 sensor.
-- Both CAM/DISP connectors and the standard sensor overlays were tested. The
-  current setup uses CAM/DISP1 with the correct `dtoverlay=imx708` setting.
-- The kernel creates the CAM/DISP1 IMX708 path and loads the correct driver, so
-  the selected port, overlay, and Linux camera support are confirmed.
-- The IMX708 at address `0x1a` fails its chip-ID read with error `-5`.
-- The module's DW9807 autofocus controller at address `0x0c` fails I2C writes
-  with error `-121`.
-- A replacement 15-to-22-pin ribbon was installed and both drivers were
-  reprobed live. The same two errors were recorded at the fresh probe time, so
-  this result was not inferred from an earlier boot log.
-- `rpicam-hello --list-cameras` therefore still reports `No cameras available!`.
-- A production `src.main --local-only --count 1` run exited nonzero at camera
-  initialization and left both `data/events.json` and `images/` empty; it did
-  not manufacture a capture or event.
+- The Raspberry Pi Camera Module 3 Standard (SC0872/IMX708) is connected to
+  CAM/DISP1 with `dtoverlay=imx708`.
+- A fresh driver probe read camera module ID `0x0301`; `rpicam-hello` lists the
+  4608 x 2592 sensor and its three capture modes.
+- Picamera2 captured a valid 1280 x 960 JPEG of 47,833 bytes. A second real
+  PIR-triggered capture was 47,580 bytes and showed an actual person.
+- NanoDet counted that person with confidence `0.611` in `149.2 ms`.
 
-This rules out Python, Picamera2, libcamera, the selected port, and the sensor
-model setting. Both chips on the same camera board fail to communicate, so the
-remaining shared failure point was the ribbon cable or camera board. A second
-cable produced exactly the same result, and both Pi camera ports were already
-tested. The SC0872 camera board is now the common remaining component and should
-be replaced or tested on another known-working Pi before further software work.
+Earlier probe failures were caused by the physical connection. After the module
+was correctly connected on CAM/DISP1, a live reprobe succeeded; the camera did
+not need replacement.
 
 ## PIR: working
 
@@ -108,7 +96,10 @@ The HC-SR501 trigger path is therefore ready for the full application.
 
 ## Completion gate
 
-After camera communication is restored, one real PIR edge must produce a real
-JPEG, a measured person count and latency, an atomic TinyDB row, an AWS
-acknowledgment, and visible dashboard data. The PIR, software, AWS connection,
-and dashboard are ready for that sequence and do not fall back to fake values.
+A real PIR edge produced event `c00c680d-d991-4ed1-998d-7a8ac04f9e0e`, a real
+JPEG, `people_count: 1`, confidence `0.611`, `149.2 ms` inference, and an atomic
+TinyDB row. AWS IoT acknowledged that same stored event on `iot/room/events`,
+and the dashboard reads it from TinyDB. A second production event correctly
+reported `people_count: 0` for an empty camera view, added the one-sentence
+summary, and was also acknowledged by AWS. The complete physical MVP path
+passes.

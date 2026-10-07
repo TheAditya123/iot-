@@ -12,6 +12,7 @@ from .database import EventStore
 from .inference import make_inference
 from .mqtt_client import MQTTPublisher, flush_outbox
 from .pir import open_pir
+from .summary import summarize_event
 
 LOG = logging.getLogger(__name__)
 
@@ -72,6 +73,7 @@ def run(config, count=0):
                         except Exception as exc:
                             LOG.exception("Person detection failed; saving the camera event")
                             event["inference_error"] = str(exc)
+            event["summary"] = summarize_event(event)
             store.add(event)  # Persist before any network operation.
             produced += 1
             LOG.info("Motion detected and saved: %s", event["event_id"])

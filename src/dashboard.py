@@ -22,6 +22,7 @@ PAGE = """<!doctype html>
     table { width: 100%; border-collapse: collapse; background: white; }
     th, td { text-align: left; padding: .65rem; border-bottom: 1px solid #e4e8eb; }
     th { background: #eaf0f4; } .scroll { overflow-x: auto; }
+    .summary { grid-column: 1 / -1; }
   </style>
 </head>
 <body>
@@ -31,16 +32,18 @@ PAGE = """<!doctype html>
   <div class="cards">
     <div class="card">Motion<div class="value">{{ 'Yes' if current.motion else 'No' }}</div></div>
     <div class="card">People<div class="value">{{ current.people_count if current.people_count is defined else '—' }}</div></div>
+    <div class="card summary">AI summary<div class="value">{{ current.summary if current.summary is defined else '—' }}</div></div>
   </div>
   <p><strong>Last update:</strong> {{ current.timestamp }}</p>
   {% else %}<p>No real sensor events have been recorded yet.</p>{% endif %}
   <h2>Recent events</h2>
   <div class="scroll"><table>
-    <thead><tr><th>Time</th><th>Motion</th><th>People</th><th>Inference</th><th>Image</th><th>Published</th></tr></thead>
+    <thead><tr><th>Time</th><th>Motion</th><th>People</th><th>Summary</th><th>Inference</th><th>Image</th><th>Published</th></tr></thead>
     <tbody>{% for row in rows %}<tr>
       <td>{{ row.event.timestamp }}</td>
       <td>{{ 'Yes' if row.event.motion else 'No' }}</td>
       <td>{{ row.event.people_count if row.event.people_count is defined else '—' }}</td>
+      <td>{{ row.event.summary if row.event.summary is defined else '—' }}</td>
       <td>{{ row.event.inference_ms ~ ' ms' if row.event.inference_ms is defined else '—' }}</td>
       <td>{{ row.event.image_path if row.event.image_path is defined else '—' }}</td>
       <td>{{ 'Yes' if row.published else 'No' }}</td>

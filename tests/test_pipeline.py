@@ -19,6 +19,7 @@ from src.dashboard import create_app
 from src.inference import letterbox
 from src.main import run
 from src.mqtt_client import flush_outbox
+from src.summary import summarize_event
 
 
 class PipelineTests(unittest.TestCase):
@@ -79,6 +80,10 @@ class PipelineTests(unittest.TestCase):
             self.assertTrue(event["motion"])
             self.assertEqual(event["pir_gpio"], 17)
             self.assertEqual(event["people_count"], 1)
+            self.assertEqual(
+                event["summary"],
+                "Motion was detected and one person was detected in the camera image.",
+            )
             self.assertTrue(Path(event["image_path"]).is_file())
             self.assertFalse(rows[0]["published"])
 
@@ -131,6 +136,10 @@ class PipelineTests(unittest.TestCase):
             self.assertEqual(event["capture_error"], "camera disconnected during capture")
             self.assertNotIn("image_path", event)
             self.assertNotIn("people_count", event)
+            self.assertEqual(
+                event["summary"],
+                "Motion was detected, but the camera image could not be captured.",
+            )
             self.assertFalse(rows[0]["published"])
 
     def test_real_pir_is_default_and_local_mode_needs_no_aws_credentials(self):
@@ -263,6 +272,21 @@ class PipelineTests(unittest.TestCase):
         self.assertIn("15-to-22-pin", detail)
         self.assertIn("camera board", detail)
 
+    def test_event_summaries_report_real_detector_results(self):
+        image = {"motion": True, "image_path": "images/event.jpg"}
+        self.assertEqual(
+            summarize_event({**image, "people_count": 0}),
+            "Motion was detected, but no person was detected in the camera image.",
+        )
+        self.assertEqual(
+            summarize_event({**image, "people_count": 2}),
+            "Motion was detected and 2 people were detected in the camera image.",
+        )
+        self.assertEqual(
+            summarize_event(image),
+            "Motion and a camera image were recorded; person detection was not enabled.",
+        )
+
     def test_detector_letterbox_preserves_image_and_target_shape(self):
         image = np.full((100, 200, 3), 255, dtype=np.uint8)
         actual = letterbox(image)
@@ -277,6 +301,7 @@ class PipelineTests(unittest.TestCase):
             try:
                 store.add({"event_id": "one", "timestamp": "2026-01-01T00:00:00Z",
                            "motion": True, "people_count": 2,
+                           "summary": "Motion was detected and 2 people were detected in the camera image.",
                            "image_path": "images/one.jpg"})
             finally:
                 store.close()
@@ -284,7 +309,9 @@ class PipelineTests(unittest.TestCase):
             status = client.get("/api/status")
             self.assertEqual(status.status_code, 200)
             self.assertEqual(status.get_json()["event"]["people_count"], 2)
-            self.assertIn(b"Smart Room Monitor", client.get("/").data)
+            page = client.get("/").data
+            self.assertIn(b"Smart Room Monitor", page)
+            self.assertIn(b"2 people were detected", page)
 
 
 if __name__ == "__main__":
