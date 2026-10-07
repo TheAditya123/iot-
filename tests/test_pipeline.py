@@ -12,7 +12,7 @@ import numpy as np
 from PIL import Image
 
 from src import config as config_module
-from src.camera import save_jpeg_atomic
+from src.camera import explain_no_csi_camera, save_jpeg_atomic
 from src.config import Config
 from src.database import EventStore
 from src.dashboard import create_app
@@ -251,6 +251,17 @@ class PipelineTests(unittest.TestCase):
             self.assertEqual(path.stat().st_mode & 0o777, 0o600)
             with Image.open(path) as saved:
                 saved.verify()
+
+    def test_camera_diagnostic_identifies_imx708_bus_failure(self):
+        kernel_log = """
+        dw9807 11-000c: I2C write CTL fail ret = -121
+        imx708 11-001a: failed to read chip id 708, with error -5
+        imx708 11-001a: probe with driver imx708 failed with error -5
+        """
+        detail = explain_no_csi_camera(kernel_log)
+        self.assertIn("correct IMX708 driver loaded", detail)
+        self.assertIn("15-to-22-pin", detail)
+        self.assertIn("camera board", detail)
 
     def test_detector_letterbox_preserves_image_and_target_shape(self):
         image = np.full((100, 200, 3), 255, dtype=np.uint8)

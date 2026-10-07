@@ -26,9 +26,9 @@ flowchart LR
 | TinyDB and MQTT outbox | Working | Events survive connection failure and restart; storage stress test retained every event |
 | AWS IoT Core | Working | TLS connects; 12/12 QoS 1 soak messages were acknowledged |
 | Dashboard | Working | HTML and JSON endpoints respond on port 5000 |
-| CSI camera | Hardware fault remains | The correct IMX708 driver loads on CAM/DISP1, but the sensor and autofocus controller do not answer over I2C |
+| CSI camera | Camera module likely faulty | The correct IMX708 driver loads, but fresh probes fail with two cables and both Pi camera ports |
 | HC-SR501 PIR | Working | A real motion test produced a rising edge on BCM GPIO17 |
-| Automated tests | Passing | 21/21 tests pass |
+| Automated tests | Passing | 22/22 tests pass |
 
 The software, PIR, and AWS paths are ready. A complete real room event still
 depends on restoring camera communication. Detailed hardware evidence
@@ -207,7 +207,7 @@ Set `INFERENCE_BACKEND=nanodet` in `.env`, then use:
 
 | Priority | Task | Completion check |
 |---:|---|---|
-| 1 | Replace/test the CSI ribbon cable, then the camera board if needed | Camera enumerates and saves a nonempty JPEG |
+| 1 | Replace/test the SC0872 camera module | Camera enumerates and saves a nonempty JPEG |
 | 2 | Run one complete physical event | PIR -> JPEG -> count -> TinyDB -> AWS -> dashboard |
 | 3 | Test real room scenes | Record useful counts and choose a confidence threshold |
 | 4 | Compare triggered and continuous inference | Record inference count, latency, CPU use, and temperature |

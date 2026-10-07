@@ -2,10 +2,49 @@
 import logging
 import os
 from pathlib import Path
+import subprocess
 import time
 from PIL import Image
 
 LOG = logging.getLogger(__name__)
+
+
+def read_camera_kernel_log() -> str:
+    """Return current-boot camera probe messages when the journal is readable."""
+    try:
+        result = subprocess.run(
+            ["journalctl", "-k", "-b", "--no-pager"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+    except (FileNotFoundError, OSError, subprocess.TimeoutExpired):
+        return ""
+    return result.stdout if result.returncode == 0 else ""
+
+
+def explain_no_csi_camera(kernel_log: str = "") -> str:
+    """Turn kernel probe evidence into an actionable camera diagnosis."""
+    lowered = kernel_log.lower()
+    imx708_id_failed = "imx708" in lowered and "failed to read chip id" in lowered
+    autofocus_failed = ("dw9807" in lowered or "dw9817" in lowered) and "i2c" in lowered
+    if imx708_id_failed and autofocus_failed:
+        return (
+            "The correct IMX708 driver loaded, but the sensor chip-ID read failed "
+            "and the autofocus controller also failed I2C communication. The Pi is "
+            "not electrically communicating with the Camera Module 3; test a known-good "
+            "Raspberry Pi 15-to-22-pin Standard-to-Mini ribbon, then the camera board"
+        )
+    if "failed to read chip id" in lowered or "probe with driver" in lowered:
+        return (
+            "A CSI sensor driver loaded, but its hardware probe failed. Check the "
+            "ribbon contacts and latches, then test a known-good Pi 5 camera cable"
+        )
+    return (
+        "Raspberry Pi OS found zero CSI camera sensors. Check the ribbon orientation, "
+        "both latches, the Pi 5 22-pin cable, and the selected CAM/DISP connector"
+    )
 
 
 def save_jpeg_atomic(image: Image.Image, path: Path) -> None:
@@ -72,11 +111,7 @@ class PiCamera:
             if self.camera is not None:
                 self.camera.close()
             if "No camera number" in str(exc):
-                detail = (
-                    "Raspberry Pi OS found zero CSI camera sensors; the camera stack is "
-                    "installed, so power off and check the ribbon orientation, both "
-                    "latches, the Pi 5 22-pin cable, and the other CAM/DISP port"
-                )
+                detail = explain_no_csi_camera(read_camera_kernel_log())
             else:
                 detail = (
                     "Picamera2 initialization failed; inspect the underlying exception "

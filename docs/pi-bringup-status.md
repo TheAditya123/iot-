@@ -20,7 +20,7 @@ No simulated sensor values were inserted into the production database.
   throttling (`get_throttled=0x0`).
 - The Python environment imports GPIO Zero, lgpio, Picamera2, TinyDB,
   OpenCV, Flask, Paho MQTT, boto3, and AWS CRT.
-- All 21 offline tests pass, including full local event assembly, preservation
+- All 22 offline tests pass, including full local event assembly, preservation
   of partial hardware-failure events, MQTT acknowledgments,
   exact-topic IoT policy generation, atomic TinyDB/JPEG/private-file recovery,
   dashboard data, and persistent outbox retry.
@@ -80,6 +80,9 @@ Observed evidence:
 - The IMX708 at address `0x1a` fails its chip-ID read with error `-5`.
 - The module's DW9807 autofocus controller at address `0x0c` fails I2C writes
   with error `-121`.
+- A replacement 15-to-22-pin ribbon was installed and both drivers were
+  reprobed live. The same two errors were recorded at the fresh probe time, so
+  this result was not inferred from an earlier boot log.
 - `rpicam-hello --list-cameras` therefore still reports `No cameras available!`.
 - A production `src.main --local-only --count 1` run exited nonzero at camera
   initialization and left both `data/events.json` and `images/` empty; it did
@@ -87,9 +90,10 @@ Observed evidence:
 
 This rules out Python, Picamera2, libcamera, the selected port, and the sensor
 model setting. Both chips on the same camera board fail to communicate, so the
-remaining shared failure point is the 15-to-22-pin ribbon cable or the camera
-board. The next check is a known-good Raspberry Pi Standard-to-Mini camera
-cable. If the same errors remain with that cable, replace/test the SC0872 board.
+remaining shared failure point was the ribbon cable or camera board. A second
+cable produced exactly the same result, and both Pi camera ports were already
+tested. The SC0872 camera board is now the common remaining component and should
+be replaced or tested on another known-working Pi before further software work.
 
 ## PIR: working
 

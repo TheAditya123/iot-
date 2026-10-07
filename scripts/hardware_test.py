@@ -11,7 +11,12 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from src.camera import make_camera, save_jpeg_atomic
+from src.camera import (
+    explain_no_csi_camera,
+    make_camera,
+    read_camera_kernel_log,
+    save_jpeg_atomic,
+)
 from src.config import Config
 from src.pir import open_pir
 
@@ -29,11 +34,7 @@ def test_camera(config, output):
             ) from exc
         probe_output = (probe.stdout + probe.stderr).strip()
         if probe.returncode != 0 or "No cameras available" in probe_output:
-            raise RuntimeError(
-                "Raspberry Pi OS found zero CSI camera sensors. The camera stack is installed, "
-                "but no sensor answered during kernel/libcamera probing; power off and check the "
-                "ribbon orientation, both latches, the Pi 5 22-pin cable, and the other CAM/DISP port"
-            )
+            raise RuntimeError(explain_no_csi_camera(read_camera_kernel_log()))
     camera = make_camera(config)
     if camera is None:
         raise RuntimeError("CAMERA_BACKEND is off")
