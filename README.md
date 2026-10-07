@@ -205,6 +205,21 @@ Set `INFERENCE_BACKEND=nanodet` in `.env`, then use:
 | `src/dashboard.py` | Local status page and JSON API |
 | `scripts/hardware_test.py` | Real camera and PIR checks |
 
+## Repository AI assistant
+
+Start Codex from this repository and describe the change in normal language:
+
+```bash
+cd ~/iot-project
+codex
+```
+
+Codex automatically reads `AGENTS.md`, which contains the verified hardware,
+pipeline, file map, extension rules, tests, and security constraints for this
+project. A new user can request changes such as “add an optional light sensor”
+or “change the dashboard status” without repeating the full project history.
+The agent still requires the user for physical wiring and account logins.
+
 ## Verification
 
 ```bash
