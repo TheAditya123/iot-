@@ -310,8 +310,8 @@ class PipelineTests(unittest.TestCase):
             self.assertEqual(status.status_code, 200)
             self.assertEqual(status.get_json()["event"]["people_count"], 2)
             page = client.get("/").data
-            self.assertIn(b"Smart Room Monitor", page)
-            self.assertIn(b"2 people were detected", page)
+            self.assertIn(b"Smart Room Control Center", page)
+            self.assertIn(b"Smart Room Operations Agent", page)
 
 
 if __name__ == "__main__":
