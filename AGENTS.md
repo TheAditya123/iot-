@@ -38,6 +38,7 @@ login is required.
 | `src/database.py` | Atomic TinyDB storage and persistent MQTT outbox |
 | `src/mqtt_client.py` | AWS IoT TLS/QoS 1 publishing |
 | `src/dashboard.py` | TinyDB-backed local HTML, JSON endpoints, and operations-agent API |\n| `src/operations_agent.py` | Bounded Smart Room tools + optional Responses API planner |\n| `src/runtime_settings.py` | Atomic live inference-threshold setting |
+| `src/monitor_control.py` | Local dashboard→monitor command queue for camera-safe manual inference |
 | `scripts/hardware_test.py` | Focused real camera and PIR checks |
 | `tests/` | Offline pipeline, storage, MQTT, dashboard, and failure tests |
 
