@@ -86,7 +86,7 @@ class OperationsTools:
         return [
             row for row in rows
             if (stamp := _parse_timestamp(row.get("event", {}).get("timestamp")))
-            and stamp.date() == target_date
+            and stamp.astimezone(now.tzinfo).date() == target_date
         ]
 
     def current_status(self):
