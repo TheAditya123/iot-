@@ -231,8 +231,9 @@ key—or if the API becomes unavailable—a deterministic fallback keeps the
 prepared classroom demo prompts working.
 
 The agent can inspect occupancy history, compare days, filter high-occupancy
-events, run sensor/AWS diagnostics, capture and infer once, change the bounded
-live person-confidence threshold, and export a CSV report. It has **no arbitrary
+events, run sensor/AWS diagnostics, capture and infer once through the running
+monitor's camera command channel, change the bounded live person-confidence
+threshold, and export a CSV report. It has **no arbitrary
 shell tool** and never fabricates sensor values.
 
 See [docs/operations-agent.md](docs/operations-agent.md) for setup and the exact
