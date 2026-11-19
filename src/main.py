@@ -10,11 +10,47 @@ from .camera import make_camera, save_jpeg_atomic
 from .config import Config
 from .database import EventStore
 from .inference import make_inference
+from .monitor_control import MonitorControl
 from .mqtt_client import MQTTPublisher, flush_outbox
 from .pir import open_pir
 from .summary import summarize_event
 
 LOG = logging.getLogger(__name__)
+
+
+def process_control_command(control, camera, inference, config):
+    """Let the dashboard reuse the monitor-owned camera without contention."""
+    command = control.consume_next()
+    if not command:
+        return False
+
+    request_id = command["id"]
+    action = command["action"]
+    try:
+        if action != "capture_and_infer":
+            result = {"ok": False, "detail": f"Unsupported monitor action: {action}"}
+        elif camera is None:
+            result = {"ok": False, "detail": "The running monitor has no camera enabled."}
+        elif inference is None:
+            result = {
+                "ok": False,
+                "detail": "The running monitor has no person detector enabled. Set INFERENCE_BACKEND=nanodet.",
+            }
+        else:
+            image = camera.capture()
+            image_path = config.image_dir / f"agent-{uuid.uuid4()}.jpg"
+            save_jpeg_atomic(image, image_path)
+            result = {
+                "ok": True,
+                "image_path": str(image_path),
+                **inference.predict(image),
+            }
+    except Exception as exc:
+        LOG.exception("Dashboard capture/inference command failed")
+        result = {"ok": False, "detail": f"Monitor capture/inference failed: {exc}"}
+
+    control.respond(request_id, result)
+    return True
 
 
 def run(config, count=0):
@@ -27,6 +63,7 @@ def run(config, count=0):
         pir = open_pir(config.gpio)
         stack.callback(pir.close)
         inference = make_inference(config)
+        control = MonitorControl(config.data_path.parent)
         publisher = MQTTPublisher(config) if config.mqtt_enabled else None
         if publisher:
             stack.callback(publisher.close)
@@ -35,26 +72,39 @@ def run(config, count=0):
                 LOG.warning("AWS is not connected yet; motion events will remain in TinyDB for retry")
         LOG.info("PIR GPIO%d warming up for %.0f seconds", config.gpio, config.warmup)
         time.sleep(config.warmup)
-        LOG.info("Ready: real PIR on GPIO%d; camera=%s; model=%s; AWS MQTT=%s",
-                 config.gpio, config.camera_backend, config.inference_backend,
-                 config.mqtt_enabled)
-        produced, next_flush, last_trigger = 0, 0.0, float("-inf")
+        LOG.info(
+            "Ready: real PIR on GPIO%d; camera=%s; model=%s; AWS MQTT=%s",
+            config.gpio, config.camera_backend, config.inference_backend,
+            config.mqtt_enabled,
+        )
+        produced, next_flush, next_heartbeat, last_trigger = 0, 0.0, 0.0, float("-inf")
         was_active = pir.motion_detected
         while count == 0 or produced < count:
-            if time.monotonic() >= next_flush:
+            now = time.monotonic()
+            if now >= next_heartbeat:
+                control.touch_heartbeat()
+                next_heartbeat = now + 1.0
+            process_control_command(control, camera, inference, config)
+            if now >= next_flush:
                 flush_outbox(store, publisher, config.device_id)
-                next_flush = time.monotonic() + 2
+                next_flush = now + 2.0
+
             active = pir.motion_detected
             rising = active and not was_active
             was_active = active
             if not rising or time.monotonic() - last_trigger < config.cooldown:
                 time.sleep(0.1)
                 continue
+
             last_trigger = time.monotonic()
             event = {
-                "device_id": config.device_id, "event_id": str(uuid.uuid4()),
-                "timestamp": datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z"),
-                "motion": True, "pir_gpio": config.gpio,
+                "device_id": config.device_id,
+                "event_id": str(uuid.uuid4()),
+                "timestamp": datetime.now(timezone.utc).isoformat(
+                    timespec="milliseconds"
+                ).replace("+00:00", "Z"),
+                "motion": True,
+                "pir_gpio": config.gpio,
             }
             if camera:
                 try:
@@ -73,13 +123,14 @@ def run(config, count=0):
                         except Exception as exc:
                             LOG.exception("Person detection failed; saving the camera event")
                             event["inference_error"] = str(exc)
+
             event["summary"] = summarize_event(event)
-            store.add(event)  # Persist before any network operation.
+            store.add(event)
             produced += 1
             LOG.info("Motion detected and saved: %s", event["event_id"])
             flush_outbox(store, publisher, config.device_id)
+
         if publisher:
-            # Give short finite runs time to establish the TLS session.
             publisher.connected.wait(config.timeout)
             flush_outbox(store, publisher, config.device_id)
 
