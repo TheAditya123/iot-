@@ -16,7 +16,7 @@ jobs:
           python-version: "3.11"
           cache: "pip"
       - name: Install
-        run: python -m pip install --upgrade pip && pip install -r requirements-pi.txt
+        run: python -m pip install --upgrade pip && pip install -r requirements-pi.txt && pip install Pillow
       - name: Compile
         run: python -m compileall -q src scripts tests
       - name: Unit tests
