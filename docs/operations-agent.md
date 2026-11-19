@@ -60,9 +60,22 @@ Start with several real sensor events already in TinyDB, open
 7. **Export today's occupancy report.** — a CSV download button appears.
 8. Optional finale: **Capture one image and run inference now.**
 
-The manual capture action needs exclusive camera access. If the long-running
-monitor already owns Picamera2, stop that process before this one action. A busy
-camera returns a truthful error instead of a fake result.
+When the long-running monitor is active, the dashboard sends this request over a
+small local filesystem command queue and the monitor reuses its already-open
+Picamera2 instance. There is no need to stop the monitor. If the monitor is not
+running, the dashboard safely falls back to opening the camera directly.
+
+## One-command preflight
+
+With the dashboard running, verify the class-demo routing without changing any
+settings:
+
+```bash
+.venv/bin/python scripts/agent_preflight.py
+```
+
+It checks the agent status endpoint plus the current-status and last-hour
+occupancy tools, then prints `PASS`.
 
 ## Reliability / safety
 
@@ -72,6 +85,8 @@ camera returns a truthful error instead of a fake result.
 - Threshold changes are bounded and atomically stored in ignored
   `data/runtime-settings.json`.
 - Manual captures remain local and do not create fake PIR events.
+- The dashboard never competes with the monitor for Picamera2; a local command
+  queue lets the monitor perform manual captures with the camera it already owns.
 - AWS diagnosis uses the configured X.509 device certificate for a TLS handshake.
 - CSV export is generated from TinyDB; users cannot provide a filesystem path.
 - The agent never receives a generic shell, Git, or arbitrary-code tool.
