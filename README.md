@@ -29,7 +29,7 @@ flowchart LR
 | TinyDB and MQTT outbox | Working | Events survive connection failure and restart; storage stress test retained every event |
 | AWS IoT Core | Working | TLS connects; 12/12 QoS 1 soak messages were acknowledged |
 | DynamoDB cloud storage | Ready to provision | `scripts/cloud_storage_setup.py` creates the IoT Rule, scoped IAM role, and `IoTEdgeEvents` table |
-| Dashboard | Working / upgraded | Responsive local frontend plus status, events, and metrics APIs on port 5000 |
+| Dashboard | Working / upgraded | Responsive local frontend plus status, events, metrics, and agent APIs on port 5000 |\n| Operations agent | Implemented | Optional Responses API planner + deterministic fallback over bounded local IoT tools |
 | CSI camera | Working | Camera Module 3 enumerates on CAM/DISP1 and saves real 1280 x 960 JPEGs |
 | HC-SR501 PIR | Working | A real motion test produced a rising edge on BCM GPIO17 |
 | Full physical pipeline | Working | Real motion produced a JPEG, `people_count: 1`, TinyDB row, and AWS acknowledgment |
@@ -215,12 +215,28 @@ Set `INFERENCE_BACKEND=nanodet` in `.env`, then use:
 | `src/summary.py` | One-sentence description of the measured occupancy result |
 | `src/database.py` | TinyDB history and durable MQTT outbox |
 | `src/mqtt_client.py` | AWS IoT TLS connection and QoS 1 publishing |
-| `src/dashboard.py` | Local Flask server and TinyDB-backed JSON APIs |
+| `src/dashboard.py` | Local Flask server, TinyDB-backed APIs, and agent endpoints |\n| `src/operations_agent.py` | Bounded IoT tools, optional AI planner, fallback planner, and truthful answer formatting |\n| `src/runtime_settings.py` | Atomic live detector-threshold override used by agent actions |
 | `templates/dashboard.html` | Responsive Smart Room frontend |
 | `static/dashboard.css` / `static/dashboard.js` | Local UI styling, live refresh, chart, and event table |
 | `scripts/cloud_storage_setup.py` | Provision AWS IoT Rule → DynamoDB cloud persistence |
 | `scripts/cloud_db_test.py` | Verify a known real event exists in DynamoDB |
 | `scripts/hardware_test.py` | Real camera and PIR checks |
+
+## Smart Room Operations Agent
+
+The localhost dashboard includes an operations-agent chat panel. With an
+optional OpenAI API key, the Responses API is used only to select one of the
+explicit IoT tools; local Python validates and executes the action. Without the
+key—or if the API becomes unavailable—a deterministic fallback keeps the
+prepared classroom demo prompts working.
+
+The agent can inspect occupancy history, compare days, filter high-occupancy
+events, run sensor/AWS diagnostics, capture and infer once, change the bounded
+live person-confidence threshold, and export a CSV report. It has **no arbitrary
+shell tool** and never fabricates sensor values.
+
+See [docs/operations-agent.md](docs/operations-agent.md) for setup and the exact
+classroom demo.
 
 ## Repository AI assistant
 

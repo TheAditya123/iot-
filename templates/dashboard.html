@@ -12,31 +12,55 @@
     <div>
       <div class="eyebrow">IOT++ EDGE MONITOR</div>
       <h1>Smart Room Control Center</h1>
-      <p>PIR-triggered occupancy intelligence with local-first storage and AWS sync.</p>
+      <p>PIR-triggered occupancy intelligence with local-first storage, AWS sync, and a bounded operations agent.</p>
     </div>
     <div class="live-pill"><span class="pulse"></span><span id="refresh-state">Live</span></div>
   </header>
 
   <main>
     <section class="hero-grid">
-      <article class="card stat">
-        <span>Motion</span><strong id="motion">—</strong><small>HC-SR501</small>
-      </article>
-      <article class="card stat">
-        <span>People</span><strong id="people">—</strong><small>Edge AI count</small>
-      </article>
-      <article class="card stat">
-        <span>Temperature</span><strong id="temperature">N/A</strong><small>BME280-ready</small>
-      </article>
-      <article class="card stat">
-        <span>Humidity</span><strong id="humidity">N/A</strong><small>BME280-ready</small>
-      </article>
-      <article class="card stat">
-        <span>Pressure</span><strong id="pressure">N/A</strong><small>BME280-ready</small>
-      </article>
-      <article class="card stat">
-        <span>Cloud sync</span><strong id="cloud-sync">—</strong><small>TinyDB → MQTT → AWS</small>
-      </article>
+      <article class="card stat"><span>Motion</span><strong id="motion">—</strong><small>HC-SR501</small></article>
+      <article class="card stat"><span>People</span><strong id="people">—</strong><small>Edge AI count</small></article>
+      <article class="card stat"><span>Temperature</span><strong id="temperature">N/A</strong><small>BME280-ready</small></article>
+      <article class="card stat"><span>Humidity</span><strong id="humidity">N/A</strong><small>BME280-ready</small></article>
+      <article class="card stat"><span>Pressure</span><strong id="pressure">N/A</strong><small>BME280-ready</small></article>
+      <article class="card stat"><span>Cloud sync</span><strong id="cloud-sync">—</strong><small>TinyDB → MQTT → AWS</small></article>
+    </section>
+
+    <section class="card panel agent-panel">
+      <div class="section-head">
+        <div>
+          <span class="eyebrow">AGENTIC AI</span>
+          <h2>Smart Room Operations Agent</h2>
+          <p class="muted">Ask about real data or request one of the agent's bounded device actions.</p>
+        </div>
+        <span id="agent-mode" class="badge">checking planner…</span>
+      </div>
+
+      <div class="prompt-chips">
+        <button data-agent-prompt="How many people were detected in the last hour?">Last-hour occupancy</button>
+        <button data-agent-prompt="Was the room busier today than yesterday?">Compare days</button>
+        <button data-agent-prompt="Run a sensor health check.">Sensor health</button>
+        <button data-agent-prompt="Why is AWS offline?">Diagnose AWS</button>
+        <button data-agent-prompt="Capture one image and run inference now.">Capture + infer</button>
+        <button data-agent-prompt="Export today's occupancy report.">Export today</button>
+      </div>
+
+      <div id="agent-chat" class="chat-log" aria-live="polite">
+        <div class="chat-row assistant">
+          <div class="bubble">
+            I can inspect TinyDB, analyze occupancy, diagnose sensors/AWS, capture and infer,
+            tune the detection threshold, and export reports. I only report real system data.
+          </div>
+        </div>
+      </div>
+
+      <form id="agent-form" class="agent-form">
+        <input id="agent-input" maxlength="500" autocomplete="off"
+          placeholder='Try: "Show events with more than 3 people"'>
+        <button type="submit" id="agent-send">Ask agent</button>
+      </form>
+      <div class="agent-footnote">No arbitrary shell access. Write actions are locally validated and bounded.</div>
     </section>
 
     <section class="split">
@@ -47,10 +71,8 @@
         </div>
         <div class="chart-wrap"><canvas id="occupancy-chart" width="900" height="300"></canvas></div>
       </article>
-
       <article class="card panel">
-        <span class="eyebrow">EDGE AI</span>
-        <h2>Latest inference</h2>
+        <span class="eyebrow">EDGE AI</span><h2>Latest inference</h2>
         <div id="summary" class="summary">No sensor events recorded yet.</div>
         <dl class="details">
           <div><dt>Inference latency</dt><dd id="inference">—</dd></div>
@@ -68,15 +90,8 @@
       </div>
       <div class="table-wrap">
         <table>
-          <thead>
-            <tr>
-              <th>Time</th><th>Motion</th><th>People</th><th>Temp</th>
-              <th>Humidity</th><th>Inference</th><th>Cloud</th>
-            </tr>
-          </thead>
-          <tbody id="events-body">
-            <tr><td colspan="7" class="empty">Waiting for real sensor data…</td></tr>
-          </tbody>
+          <thead><tr><th>Time</th><th>Motion</th><th>People</th><th>Temp</th><th>Humidity</th><th>Inference</th><th>Cloud</th></tr></thead>
+          <tbody id="events-body"><tr><td colspan="7" class="empty">Waiting for real sensor data…</td></tr></tbody>
         </table>
       </div>
     </section>
@@ -98,7 +113,7 @@
           <span>TinyDB</span><b>→</b><span>MQTT</span><b>→</b>
           <span>AWS IoT</span><b>→</b><span>DynamoDB</span>
         </div>
-        <p>Images remain local. Only lightweight event metadata is sent to AWS.</p>
+        <p>The operations agent reads real TinyDB/system state and can invoke only explicit safe tools. Images remain local.</p>
       </article>
     </section>
   </main>

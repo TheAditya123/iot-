@@ -23,7 +23,7 @@ login is required.
   Do not describe objects that NanoDet did not report.
 - The MQTT connectivity-test topic is `iot/setup/test`. Real room events use
   `iot/room/events` with QoS 1.
-- There is no BME280 or environmental sensor in the current product.
+- There is no BME280 or environmental sensor in the current product.\n- The dashboard operations agent may inspect real local/AWS state and invoke only the explicit tools in `src/operations_agent.py`; never add generic shell execution to the classroom agent.
 
 ## Code map
 
@@ -37,7 +37,7 @@ login is required.
 | `src/summary.py` | One-sentence occupancy result |
 | `src/database.py` | Atomic TinyDB storage and persistent MQTT outbox |
 | `src/mqtt_client.py` | AWS IoT TLS/QoS 1 publishing |
-| `src/dashboard.py` | TinyDB-backed local HTML and JSON endpoints |
+| `src/dashboard.py` | TinyDB-backed local HTML, JSON endpoints, and operations-agent API |\n| `src/operations_agent.py` | Bounded Smart Room tools + optional Responses API planner |\n| `src/runtime_settings.py` | Atomic live inference-threshold setting |
 | `scripts/hardware_test.py` | Focused real camera and PIR checks |
 | `tests/` | Offline pipeline, storage, MQTT, dashboard, and failure tests |
 
