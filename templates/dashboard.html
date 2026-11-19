@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#08111f">
+  <title>IoT++ Smart Room</title>
+  <link rel="stylesheet" href="/static/dashboard.css">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <div class="eyebrow">IOT++ EDGE MONITOR</div>
+      <h1>Smart Room Control Center</h1>
+      <p>PIR-triggered occupancy intelligence with local-first storage and AWS sync.</p>
+    </div>
+    <div class="live-pill"><span class="pulse"></span><span id="refresh-state">Live</span></div>
+  </header>
+
+  <main>
+    <section class="hero-grid">
+      <article class="card stat">
+        <span>Motion</span><strong id="motion">—</strong><small>HC-SR501</small>
+      </article>
+      <article class="card stat">
+        <span>People</span><strong id="people">—</strong><small>Edge AI count</small>
+      </article>
+      <article class="card stat">
+        <span>Temperature</span><strong id="temperature">N/A</strong><small>BME280-ready</small>
+      </article>
+      <article class="card stat">
+        <span>Humidity</span><strong id="humidity">N/A</strong><small>BME280-ready</small>
+      </article>
+      <article class="card stat">
+        <span>Pressure</span><strong id="pressure">N/A</strong><small>BME280-ready</small>
+      </article>
+      <article class="card stat">
+        <span>Cloud sync</span><strong id="cloud-sync">—</strong><small>TinyDB → MQTT → AWS</small>
+      </article>
+    </section>
+
+    <section class="split">
+      <article class="card panel">
+        <div class="section-head">
+          <div><span class="eyebrow">OCCUPANCY</span><h2>People over time</h2></div>
+          <div class="metric"><span>Peak</span><strong id="peak-people">—</strong></div>
+        </div>
+        <div class="chart-wrap"><canvas id="occupancy-chart" width="900" height="300"></canvas></div>
+      </article>
+
+      <article class="card panel">
+        <span class="eyebrow">EDGE AI</span>
+        <h2>Latest inference</h2>
+        <div id="summary" class="summary">No sensor events recorded yet.</div>
+        <dl class="details">
+          <div><dt>Inference latency</dt><dd id="inference">—</dd></div>
+          <div><dt>Average latency</dt><dd id="avg-inference">—</dd></div>
+          <div><dt>Last event</dt><dd id="last-event">—</dd></div>
+          <div><dt>Events stored</dt><dd id="event-count">0</dd></div>
+        </dl>
+      </article>
+    </section>
+
+    <section class="card panel">
+      <div class="section-head">
+        <div><span class="eyebrow">EVENT LOG</span><h2>Recent sensor events</h2></div>
+        <span id="pending-badge" class="badge">0 pending</span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Time</th><th>Motion</th><th>People</th><th>Temp</th>
+              <th>Humidity</th><th>Inference</th><th>Cloud</th>
+            </tr>
+          </thead>
+          <tbody id="events-body">
+            <tr><td colspan="7" class="empty">Waiting for real sensor data…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="split lower">
+      <article class="card panel">
+        <span class="eyebrow">DEVICE</span><h2>Raspberry Pi edge node</h2>
+        <dl class="details">
+          <div><dt>Device ID</dt><dd id="device-id">—</dd></div>
+          <div><dt>PIR GPIO</dt><dd id="pir-gpio">—</dd></div>
+          <div><dt>Inference backend</dt><dd id="inference-backend">—</dd></div>
+          <div><dt>Storage</dt><dd>TinyDB + DynamoDB</dd></div>
+        </dl>
+      </article>
+      <article class="card panel architecture">
+        <span class="eyebrow">PIPELINE</span><h2>Local-first architecture</h2>
+        <div class="flow">
+          <span>PIR + Camera</span><b>→</b><span>Pi + Edge AI</span><b>→</b>
+          <span>TinyDB</span><b>→</b><span>MQTT</span><b>→</b>
+          <span>AWS IoT</span><b>→</b><span>DynamoDB</span>
+        </div>
+        <p>Images remain local. Only lightweight event metadata is sent to AWS.</p>
+      </article>
+    </section>
+  </main>
+
+  <footer>IoT++ Smart Room Monitor · local dashboard · <span id="updated">not updated yet</span></footer>
+  <script src="/static/dashboard.js"></script>
+</body>
+</html>

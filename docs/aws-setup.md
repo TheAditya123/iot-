@@ -43,7 +43,9 @@ The setup identity needs `sts:GetCallerIdentity` and these IoT operations:
 `iot:CreateKeysAndCertificate`, `iot:DescribeCertificate`,
 `iot:AttachPolicy`, `iot:AttachThingPrincipal`, `iot:UpdateCertificate`,
 and `iot:DescribeEndpoint`. Your lab administrator may need to grant them.
-This setup needs no DynamoDB or IAM-role creation permissions.
+This **basic MQTT/device-certificate setup** needs no DynamoDB or IAM-role
+creation permissions. Cloud event persistence is a separate optional step in
+[cloud-database.md](cloud-database.md), using `scripts/cloud_storage_setup.py`.
 
 ## 2. Create the basic resources
 
@@ -197,3 +199,21 @@ different `--client_id` (for example, `basicPubSub`), set that exact value as
 - [AWS IoT publish/subscribe policies](https://docs.aws.amazon.com/iot/latest/developerguide/pub-sub-policy.html)
 - [AWS X.509 device certificates](https://docs.aws.amazon.com/iot/latest/developerguide/x509-client-certs.html)
 - [Paho MQTT Python client](https://eclipse.dev/paho/files/paho.mqtt.python/html/client.html)
+
+
+## 4. Add cloud event persistence
+
+After MQTT is working, add the professor's AWS → DB leg without changing the Pi
+device identity:
+
+```bash
+.venv/bin/python scripts/cloud_storage_setup.py --profile iot-dev --region us-east-1
+.venv/bin/python scripts/cloud_storage_setup.py --profile iot-dev --region us-east-1 --apply
+```
+
+This creates/reuses `IoTEdgeEvents`, a scoped IoT Rule IAM role, and the
+`RoomEventsToDynamoDB` IoT topic rule. The Pi continues publishing only MQTT
+metadata with its X.509 certificate; it does not receive DynamoDB credentials.
+
+See [cloud-database.md](cloud-database.md) for the schema, permissions, and
+verification command.

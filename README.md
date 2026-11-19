@@ -2,8 +2,9 @@
 
 A Raspberry Pi 5 uses an HC-SR501 PIR sensor to trigger a camera only when
 motion occurs. The Pi then runs local person detection, saves the event in
-TinyDB, publishes JSON metadata to AWS IoT Core, and displays recent events on a
-local dashboard. Images stay on the Pi.
+TinyDB, publishes JSON metadata to AWS IoT Core, and can persist the same
+metadata in DynamoDB through an AWS IoT Rule. A responsive local dashboard reads
+TinyDB directly. Images stay on the Pi.
 
 ```mermaid
 flowchart LR
@@ -12,8 +13,10 @@ flowchart LR
     C --> D[Model finds people in image]
     D --> E[Pi creates count + one-sentence summary]
     E --> F[TinyDB saves event]
-    F -->|Publish people_count over MQTT| G[AWS IoT topic<br/>iot/room/events]
-    F --> H[Dashboard shows status]
+    F -->|Publish metadata over MQTT| G[AWS IoT Core<br/>iot/room/events]
+    G --> J[AWS IoT Rule]
+    J --> K[DynamoDB<br/>IoTEdgeEvents]
+    F --> H[Local dashboard<br/>localhost:5000]
     B --> I[Image stays on Pi]
 ```
 
@@ -25,7 +28,8 @@ flowchart LR
 | Person detector | Working with test images | NanoDet counted two people in a person image and zero in a no-person image |
 | TinyDB and MQTT outbox | Working | Events survive connection failure and restart; storage stress test retained every event |
 | AWS IoT Core | Working | TLS connects; 12/12 QoS 1 soak messages were acknowledged |
-| Dashboard | Working | HTML and JSON endpoints respond on port 5000 |
+| DynamoDB cloud storage | Ready to provision | `scripts/cloud_storage_setup.py` creates the IoT Rule, scoped IAM role, and `IoTEdgeEvents` table |
+| Dashboard | Working / upgraded | Responsive local frontend plus status, events, and metrics APIs on port 5000 |
 | CSI camera | Working | Camera Module 3 enumerates on CAM/DISP1 and saves real 1280 x 960 JPEGs |
 | HC-SR501 PIR | Working | A real motion test produced a rising edge on BCM GPIO17 |
 | Full physical pipeline | Working | Real motion produced a JPEG, `people_count: 1`, TinyDB row, and AWS acknowledgment |
@@ -159,6 +163,14 @@ Example MQTT message format (values are illustrative):
 Only this lightweight metadata is published. The JPEG remains on the Pi. If
 MQTT is unavailable, TinyDB keeps the event and the Pi retries it later.
 
+### DynamoDB cloud persistence
+
+Cloud storage is additive: TinyDB remains the durable local source of truth.
+Run `scripts/cloud_storage_setup.py` to create an AWS IoT Rule that writes
+events from `iot/room/events` into the `IoTEdgeEvents` DynamoDB table using
+`device_id` and `event_id` as its keys. The Pi never receives DynamoDB IAM
+credentials. See [docs/cloud-database.md](docs/cloud-database.md).
+
 ## Run the project
 
 ```bash
@@ -188,8 +200,9 @@ Set `INFERENCE_BACKEND=nanodet` in `.env`, then use:
 
 | Interface | Address |
 |---|---|
-| Dashboard | `http://raspberrypi.local:5000/` |
-| JSON | `/api/status` and `/api/events` |
+| Dashboard on Pi | `http://localhost:5000/` |
+| Dashboard on LAN | `http://raspberrypi.local:5000/` |
+| JSON APIs | `/api/status`, `/api/events`, and `/api/metrics` |
 
 ## Main files
 
@@ -202,7 +215,11 @@ Set `INFERENCE_BACKEND=nanodet` in `.env`, then use:
 | `src/summary.py` | One-sentence description of the measured occupancy result |
 | `src/database.py` | TinyDB history and durable MQTT outbox |
 | `src/mqtt_client.py` | AWS IoT TLS connection and QoS 1 publishing |
-| `src/dashboard.py` | Local status page and JSON API |
+| `src/dashboard.py` | Local Flask server and TinyDB-backed JSON APIs |
+| `templates/dashboard.html` | Responsive Smart Room frontend |
+| `static/dashboard.css` / `static/dashboard.js` | Local UI styling, live refresh, chart, and event table |
+| `scripts/cloud_storage_setup.py` | Provision AWS IoT Rule → DynamoDB cloud persistence |
+| `scripts/cloud_db_test.py` | Verify a known real event exists in DynamoDB |
 | `scripts/hardware_test.py` | Real camera and PIR checks |
 
 ## Repository AI assistant
@@ -231,9 +248,11 @@ The agent still requires the user for physical wiring and account logins.
 
 | Priority | Task | Completion check |
 |---:|---|---|
-| 1 | Test more real room scenes | Record useful counts and tune the confidence threshold if needed |
-| 2 | Compare triggered and continuous inference | Record inference count, latency, CPU use, and temperature |
-| 3 | Add automatic startup if needed | Enable services only after the final demo setup is stable |
+| 1 | Provision and verify DynamoDB | Run the cloud-storage setup, trigger one real event, and verify its `event_id` in `IoTEdgeEvents` |
+| 2 | Test more real room scenes | Record useful counts and tune the confidence threshold if needed |
+| 3 | Compare triggered and continuous inference | Record inference count, latency, CPU use, and temperature |
+| 4 | Add BME280 environmental sensing | Populate temperature, humidity, and pressure fields already supported by the dashboard |
+| 5 | Add automatic startup if needed | Enable services only after the final demo setup is stable |
 
 ## Files kept out of Git
 
