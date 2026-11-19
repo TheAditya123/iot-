@@ -4,10 +4,10 @@ from pathlib import Path
 import tempfile
 from types import SimpleNamespace
 import unittest
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from src.database import EventStore
-from src.operations_agent import OperationsAgent, OperationsTools, fallback_plan
+from src.operations_agent import OpenAIPlanner, OperationsAgent, OperationsTools, fallback_plan
 from src.runtime_settings import get_person_threshold, set_person_threshold
 
 
@@ -152,6 +152,35 @@ class AgentTests(unittest.TestCase):
                 result = tools.capture_and_infer()
             self.assertFalse(result["ok"])
             self.assertIn("camera busy", result["detail"])
+
+    def test_openai_planner_parses_only_supported_tool_selection(self):
+        planner = OpenAIPlanner()
+        planner.api_key = "test-key"
+        planner.model = "gpt-6-luna"
+        response = MagicMock()
+        response.output_text = '{"tool":"occupancy_summary","arguments":{"window":"last_hour"}}'
+        client = MagicMock()
+        client.responses.create.return_value = response
+        with patch("openai.OpenAI", return_value=client):
+            plan = planner.plan("How many people were detected in the last hour?")
+        self.assertEqual(
+            plan,
+            {"tool": "occupancy_summary", "arguments": {"window": "last_hour"}},
+        )
+        call = client.responses.create.call_args.kwargs
+        self.assertEqual(call["model"], "gpt-6-luna")
+        self.assertEqual(call["input"][-1]["content"], "How many people were detected in the last hour?")
+
+    def test_cloud_health_without_credentials_is_truthful_and_offline_safe(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            now = datetime.fromisoformat("2026-11-19T15:00:00-06:00")
+            path, tools = self.make_tools(root, now)
+            result = tools.cloud_health()
+            self.assertFalse(result["configured"])
+            self.assertFalse(result["tls_reachable"])
+            self.assertIn("MQTT_ENDPOINT", result["detail"])
+            self.assertEqual(result["pending_events"], 0)
 
 
 if __name__ == "__main__":
