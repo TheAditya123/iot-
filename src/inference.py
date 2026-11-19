@@ -6,15 +6,18 @@ import time
 import numpy as np
 from PIL import Image
 
+from .runtime_settings import get_person_threshold
+
 
 def letterbox(image: np.ndarray, size: int = 416) -> np.ndarray:
-    """Resize an RGB image to a square without changing its aspect ratio."""
     import cv2
-
     height, width = image.shape[:2]
     scale = min(size / width, size / height)
-    resized = cv2.resize(image, (round(width * scale), round(height * scale)),
-                         interpolation=cv2.INTER_AREA)
+    resized = cv2.resize(
+        image,
+        (round(width * scale), round(height * scale)),
+        interpolation=cv2.INTER_AREA,
+    )
     canvas = np.zeros((size, size, 3), dtype=np.uint8)
     top = (size - resized.shape[0]) // 2
     left = (size - resized.shape[1]) // 2
@@ -23,15 +26,12 @@ def letterbox(image: np.ndarray, size: int = 416) -> np.ndarray:
 
 
 class NanoDetPersonDetector:
-    """Count COCO class 0 (person) using OpenCV Zoo NanoDet."""
-
     SIZE = 416
     STRIDES = (8, 16, 32, 64)
     REG_MAX = 7
 
     def __init__(self, config):
         import cv2
-
         if not config.model_path.is_file():
             raise ValueError(
                 f"Missing detector model: {config.model_path}; run scripts/download_model.py"
@@ -53,14 +53,15 @@ class NanoDetPersonDetector:
         self.net.setPreferableBackend(cv2.dnn.DNN_BACKEND_OPENCV)
         self.net.setPreferableTarget(cv2.dnn.DNN_TARGET_CPU)
 
-    def _decode(self, outputs) -> tuple[list[list[float]], list[float]]:
+    def _decode(self, outputs, threshold):
         boxes, scores = [], []
         for stride, class_scores, box_values, anchors in zip(
-                self.STRIDES, outputs[::2], outputs[1::2], self.anchors):
+            self.STRIDES, outputs[::2], outputs[1::2], self.anchors
+        ):
             class_scores = np.squeeze(class_scores, axis=0) if class_scores.ndim == 3 else class_scores
             box_values = np.squeeze(box_values, axis=0) if box_values.ndim == 3 else box_values
             person_scores = class_scores[:, 0]
-            keep = person_scores >= self.threshold
+            keep = person_scores >= threshold
             if not np.any(keep):
                 continue
             person_scores = person_scores[keep]
@@ -78,22 +79,26 @@ class NanoDetPersonDetector:
             scores.extend(person_scores.astype(float).tolist())
         return boxes, scores
 
-    def predict(self, image: Image.Image) -> dict[str, object]:
+    def predict(self, image: Image.Image):
         started = time.perf_counter()
+        threshold = get_person_threshold(self.threshold)
         rgb = letterbox(np.asarray(image.convert("RGB")), self.SIZE)
         normalized = (rgb.astype(np.float32) - self.mean) / self.std
         self.net.setInput(self.cv2.dnn.blobFromImage(normalized))
         outputs = self.net.forward(self.net.getUnconnectedOutLayersNames())
-        boxes, scores = self._decode(outputs)
+        boxes, scores = self._decode(outputs, threshold)
         indices = self.cv2.dnn.NMSBoxes(
-            boxes, scores, self.threshold, self.nms_threshold
+            boxes, scores, threshold, self.nms_threshold
         ) if boxes else []
         selected = [scores[int(index)] for index in np.asarray(indices).reshape(-1)]
         return {
             "people_count": len(selected),
-            "person_confidences": [round(value, 3) for value in sorted(selected, reverse=True)],
+            "person_confidences": [
+                round(value, 3) for value in sorted(selected, reverse=True)
+            ],
             "inference_ms": round((time.perf_counter() - started) * 1000.0, 1),
             "inference_backend": "nanodet",
+            "person_confidence_threshold": threshold,
         }
 
 
