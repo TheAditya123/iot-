@@ -132,6 +132,28 @@ class AgentTests(unittest.TestCase):
             self.assertEqual(response["planner"], "local-fallback-after-ai-error")
             self.assertIn("2 total person detections", response["answer"])
 
+    def test_capture_prefers_running_monitor_command_channel(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _, tools = self.make_tools(
+                root, datetime.fromisoformat("2026-11-19T15:00:00-06:00")
+            )
+            control = MagicMock()
+            control.is_alive.return_value = True
+            control.request.return_value = {
+                "ok": True,
+                "people_count": 2,
+                "inference_ms": 101.0,
+                "image_path": "images/agent.jpg",
+            }
+            with patch("src.operations_agent.MonitorControl", return_value=control), \
+                 patch("src.operations_agent.Config.load") as config_load:
+                result = tools.capture_and_infer()
+            self.assertTrue(result["ok"])
+            self.assertEqual(result["people_count"], 2)
+            control.request.assert_called_once_with("capture_and_infer", timeout=8.0)
+            config_load.assert_not_called()
+
     def test_capture_failure_is_truthfully_returned(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
