@@ -26,6 +26,7 @@ from .camera import make_camera, save_jpeg_atomic
 from .config import Config
 from .database import EventStore
 from .inference import make_inference
+from .monitor_control import MonitorControl
 from .runtime_settings import get_person_threshold, set_person_threshold
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -284,6 +285,19 @@ class OperationsTools:
         }
 
     def capture_and_infer(self):
+        # Prefer the long-running monitor because it already owns Picamera2.
+        # This avoids stopping the sensor pipeline just to demo an agent action.
+        control = MonitorControl(self.data_path.parent)
+        if control.is_alive():
+            try:
+                return control.request("capture_and_infer", timeout=8.0)
+            except TimeoutError as exc:
+                return {
+                    "ok": False,
+                    "detail": f"The monitor is running but did not answer the capture request: {exc}",
+                }
+
+        # If the monitor is not running, the dashboard can safely own the camera.
         config = Config.load(local_only=True)
         if config.camera_backend == "off":
             return {"ok": False, "detail": "Camera is disabled by CAMERA_BACKEND=off."}
@@ -304,10 +318,7 @@ class OperationsTools:
         except Exception as exc:
             return {
                 "ok": False,
-                "detail": (
-                    "Manual capture/inference could not run. If the monitor already "
-                    f"owns the camera, stop that process for this action. Error: {exc}"
-                ),
+                "detail": f"Direct camera capture/inference failed: {exc}",
             }
         finally:
             if camera is not None:
